@@ -4,8 +4,8 @@
 // !!! IMPORTANT: Ganti dengan URL dan Key Supabase Anda !!!
 // Di Vercel, gunakan Environment Variables
 
-const SUPABASE_URL = window.SUPABASE_URL || 'https://your-project.supabase.co';
-const SUPABASE_ANON_KEY = window.SUPABASE_ANON_KEY || 'your-anon-key';
+const SUPABASE_URL = 'https://ratkhbsmtfvuvngavqdk.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJhdGtoYnNtdGZ2dXZuZ2F2cWRrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MjI2Njg0MDAsImV4cCI6MjAzODI0NDQwMH0.mkdZb3_t';
 
 // Inisialisasi Supabase client
 let supabase;

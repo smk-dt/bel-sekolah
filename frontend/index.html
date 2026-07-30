@@ -3,17 +3,17 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <meta name="theme-color" content="#0a0e1a">
+    <meta name="theme-color" content="#2563EB">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <meta name="description" content="Smart School EMS - Energy Management System">
-    <title>Smart School EMS</title>
+    <meta name="description" content="Smart School Bell IoT - Sistem Bel Otomatis Sekolah Berbasis ESP32">
+    <title>Smart School Bell</title>
 
     <!-- Bootstrap 5 CSS -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <!-- Bootstrap Icons -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
-    <!-- Google Fonts -->
+    <!-- Google Fonts: Inter -->
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
     
     <!-- Custom CSS -->
@@ -22,77 +22,291 @@
 <body>
 
     <!-- ============================================ -->
+    <!-- LOGIN PAGE                                   -->
+    <!-- ============================================ -->
+    <div id="page-login" class="login-page">
+        <div class="login-container">
+            <div class="login-logo">
+                <div class="login-icon">
+                    <i class="bi bi-megaphone-fill"></i>
+                </div>
+                <h1 class="login-title">Smart School Bell</h1>
+                <p class="login-subtitle">Sistem Bel Otomatis Terintegrasi</p>
+            </div>
+            <form id="form-login" class="login-form">
+                <div class="login-field">
+                    <i class="bi bi-person-circle field-icon"></i>
+                    <input type="text" id="login-username" class="login-input" placeholder="Username" autocomplete="username" required>
+                </div>
+                <div class="login-field">
+                    <i class="bi bi-lock-fill field-icon"></i>
+                    <input type="password" id="login-password" class="login-input" placeholder="Password" autocomplete="current-password" required>
+                </div>
+                <button type="submit" id="btn-login" class="login-btn">
+                    <span id="login-text">Masuk</span>
+                    <span id="login-spinner" class="spinner-border spinner-border-sm d-none"></span>
+                </button>
+            </form>
+            <p class="login-footer">Smart School Bell IoT v2.0</p>
+        </div>
+    </div>
+
+    <!-- ============================================ -->
     <!-- APP SHELL                                    -->
     <!-- ============================================ -->
-    <div id="app-shell">
+    <div id="app-shell" class="d-none">
 
-        <!-- ======== TOP STATUS BAR ======== -->
-        <header class="app-topbar" id="app-topbar">
-            <div class="topbar-left">
-                <i class="bi bi-lightning-charge-fill topbar-logo"></i>
-                <div>
-                    <span class="topbar-title">Smart School EMS</span>
-                    <span class="topbar-subtitle" id="topbar-time">--:--:--</span>
+        <!-- ======== STICKY HEADER ======== -->
+        <header class="app-header" id="app-header">
+            <div class="header-left">
+                <div class="header-logo">
+                    <i class="bi bi-megaphone-fill"></i>
+                </div>
+                <div class="header-brand">
+                    <span class="header-title">SMART SCHOOL BELL</span>
+                    <span class="header-time" id="header-clock">--:--:--</span>
                 </div>
             </div>
-            <div class="topbar-right">
-                <span class="status-dot status-online" id="topbar-esp"></span>
-                <span class="status-dot status-wifi" id="topbar-wifi"></span>
+            <div class="header-right">
+                <div class="header-datetime d-none d-md-block">
+                    <span id="header-date">---, -- --- ----</span>
+                </div>
+                <div class="header-esp-status" id="header-esp">
+                    <span class="esp-dot" id="esp-dot"></span>
+                    <span class="esp-label" id="esp-label">Online</span>
+                </div>
+                <div class="header-avatar" id="btn-logout" title="Logout">
+                    <i class="bi bi-person-circle"></i>
+                </div>
             </div>
         </header>
 
         <!-- ======== PAGE CONTAINER ======== -->
-        <main class="app-pages" id="app-pages">
+        <main class="app-content" id="app-content">
 
             <!-- ======================================== -->
-            <!-- PAGE 1 : HOME                            -->
+            <!-- HOME PAGE                                -->
             <!-- ======================================== -->
-            <div class="page active" id="page-home">
-                <div class="page-inner">
+            <div class="page active fade-in" id="page-home">
+                <div class="page-scroll">
+                    
+                    <!-- Hero Card -->
+                    <div class="hero-card" id="hero-card">
+                        <div class="hero-bg"></div>
+                        <div class="hero-content">
+                            <div class="hero-top">
+                                <span class="hero-school" id="hero-school">SMK Diponegoro Tangerang</span>
+                                <span class="hero-badge" id="hero-esp-badge">
+                                    <span class="badge-dot online"></span>
+                                    <span id="hero-esp-text">Online</span>
+                                </span>
+                            </div>
+                            <div class="hero-clock" id="hero-clock">--:--:--</div>
+                            <div class="hero-date" id="hero-date">---, -- --- ----</div>
+                            <div class="hero-status">
+                                <span>Sistem <strong id="hero-sys-status">Aktif</strong></span>
+                            </div>
+                        </div>
+                    </div>
 
-                    <!-- SYSTEM STATUS CARD -->
-                    <div class="card system-card">
-                        <div class="card-body">
-                            <div class="system-clock">
-                                <div class="clock-time" id="home-clock">--:--:--</div>
-                                <div class="clock-date" id="home-date">---, -- --- ----</div>
+                    <!-- Next Bell Card -->
+                    <div class="section-label">Bel Berikutnya</div>
+                    <div class="nextbell-card" id="nextbell-card">
+                        <div class="nextbell-icon">
+                            <i class="bi bi-bell-fill"></i>
+                        </div>
+                        <div class="nextbell-info">
+                            <div class="nextbell-time" id="nextbell-time">--:--</div>
+                            <div class="nextbell-name" id="nextbell-name">---</div>
+                            <div class="nextbell-audio" id="nextbell-audio">
+                                <i class="bi bi-file-music"></i>
+                                <span>---</span>
                             </div>
-                            <div class="system-badges">
-                                <span class="sys-badge" id="home-mode">
-                                    <i class="bi bi-robot"></i>
-                                    <span>AUTO</span>
-                                </span>
-                                <span class="sys-badge" id="home-esp">
-                                    <i class="bi bi-cpu"></i>
-                                    <span>Online</span>
-                                </span>
-                                <span class="sys-badge" id="home-wifi">
-                                    <i class="bi bi-wifi"></i>
-                                    <span>Connected</span>
+                        </div>
+                        <div class="nextbell-countdown" id="nextbell-countdown">
+                            <div class="countdown-label">Countdown</div>
+                            <div class="countdown-value" id="countdown-value">--:--:--</div>
+                        </div>
+                        <div class="nextbell-status">
+                            <span class="status-badge" id="nextbell-status-badge">Menunggu</span>
+                        </div>
+                    </div>
+
+                    <!-- Device Status Grid -->
+                    <div class="section-label">Status Perangkat</div>
+                    <div class="device-grid" id="device-grid">
+                        <!-- Generated by JS -->
+                    </div>
+
+                    <!-- Quick Actions -->
+                    <div class="section-label">Aksi Cepat</div>
+                    <div class="quick-actions" id="quick-actions">
+                        <button class="qa-btn qa-full" id="btn-test-audio">
+                            <i class="bi bi-volume-up-fill"></i>
+                            <span>Test Audio</span>
+                            <div class="qa-loading d-none" id="qa-audio-loading">
+                                <div class="spinner-border spinner-border-sm"></div>
+                            </div>
+                        </button>
+                        <div class="qa-grid">
+                            <button class="qa-btn qa-relay" data-relay="1" data-action="on">
+                                <i class="bi bi-toggle-on text-success"></i>
+                                <span>Relay 1 ON</span>
+                            </button>
+                            <button class="qa-btn qa-relay" data-relay="1" data-action="off">
+                                <i class="bi bi-toggle-off text-secondary"></i>
+                                <span>Relay 1 OFF</span>
+                            </button>
+                            <button class="qa-btn qa-relay" data-relay="2" data-action="on">
+                                <i class="bi bi-toggle-on text-success"></i>
+                                <span>Relay 2 ON</span>
+                            </button>
+                            <button class="qa-btn qa-relay" data-relay="2" data-action="off">
+                                <i class="bi bi-toggle-off text-secondary"></i>
+                                <span>Relay 2 OFF</span>
+                            </button>
+                            <button class="qa-btn" id="btn-sync-rtc">
+                                <i class="bi bi-arrow-repeat text-primary"></i>
+                                <span>Sync RTC</span>
+                            </button>
+                            <button class="qa-btn" id="btn-refresh-status">
+                                <i class="bi bi-arrow-clockwise text-info"></i>
+                                <span>Refresh</span>
+                            </button>
+                            <button class="qa-btn qa-danger" id="btn-restart-esp">
+                                <i class="bi bi-arrow-repeat text-danger"></i>
+                                <span>Restart ESP32</span>
+                            </button>
+                        </div>
+                    </div>
+
+                </div>
+            </div>
+
+            <!-- ======================================== -->
+            <!-- SCHEDULE PAGE (Jadwal)                   -->
+            <!-- ======================================== -->
+            <div class="page fade-in" id="page-jadwal">
+                <div class="page-scroll">
+                    
+                    <!-- Day Tabs -->
+                    <div class="day-tabs" id="day-tabs">
+                        <button class="day-tab active" data-day="Senin">Senin</button>
+                        <button class="day-tab" data-day="Selasa">Selasa</button>
+                        <button class="day-tab" data-day="Rabu">Rabu</button>
+                        <button class="day-tab" data-day="Kamis">Kamis</button>
+                        <button class="day-tab" data-day="Jumat">Jumat</button>
+                        <button class="day-tab" data-day="Sabtu">Sabtu</button>
+                    </div>
+
+                    <!-- Search & Filter -->
+                    <div class="jadwal-toolbar">
+                        <div class="jadwal-search">
+                            <i class="bi bi-search"></i>
+                            <input type="text" id="jadwal-search-input" placeholder="Cari jadwal..." class="jadwal-input">
+                        </div>
+                        <select id="jadwal-filter" class="jadwal-select">
+                            <option value="all">Semua</option>
+                            <option value="active">Aktif</option>
+                            <option value="inactive">Nonaktif</option>
+                        </select>
+                    </div>
+
+                    <!-- Schedule Table -->
+                    <div class="table-container">
+                        <table class="modern-table">
+                            <thead>
+                                <tr>
+                                    <th>Hari</th>
+                                    <th>Jam</th>
+                                    <th>Nama</th>
+                                    <th>Audio</th>
+                                    <th>Status</th>
+                                    <th class="text-center">Aksi</th>
+                                </tr>
+                            </thead>
+                            <tbody id="schedule-table-body">
+                                <!-- Generated by JS -->
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <!-- Pagination -->
+                    <ul class="modern-pagination" id="schedule-pagination"></ul>
+
+                </div>
+
+                <!-- Floating Action Button -->
+                <button class="fab" id="btn-add-schedule" title="Tambah Jadwal">
+                    <i class="bi bi-plus-lg"></i>
+                </button>
+            </div>
+
+            <!-- ======================================== -->
+            <!-- STATUS / MONITORING PAGE                 -->
+            <!-- ======================================== -->
+            <div class="page fade-in" id="page-status">
+                <div class="page-scroll">
+
+                    <!-- ESP32 Hero Details -->
+                    <div class="esp-hero" id="esp-hero">
+                        <div class="esp-hero-top">
+                            <div class="esp-hero-icon">
+                                <i class="bi bi-cpu"></i>
+                            </div>
+                            <div class="esp-hero-info">
+                                <span class="esp-hero-title" id="esp-hero-title">ESP32 School Bell</span>
+                                <span class="esp-hero-status" id="status-hero-badge">
+                                    <span class="badge-dot online"></span>
+                                    ONLINE
                                 </span>
                             </div>
-                            <div class="electrical-row">
-                                <div class="electrical-item">
-                                    <span class="el-label">Voltage</span>
-                                    <span class="el-value" id="home-voltage">220 <small>V</small></span>
+                        </div>
+                        <div class="esp-hero-details" id="esp-hero-details">
+                            <div class="detail-grid">
+                                <div class="detail-item">
+                                    <span class="detail-label">Uptime</span>
+                                    <span class="detail-value" id="esp-uptime">--</span>
                                 </div>
-                                <div class="electrical-divider"></div>
-                                <div class="electrical-item">
-                                    <span class="el-label">Current</span>
-                                    <span class="el-value" id="home-current">4.25 <small>A</small></span>
+                                <div class="detail-item">
+                                    <span class="detail-label">Chip ID</span>
+                                    <span class="detail-value" id="esp-chip-id">--</span>
                                 </div>
-                                <div class="electrical-divider"></div>
-                                <div class="electrical-item">
-                                    <span class="el-label">Power</span>
-                                    <span class="el-value" id="home-power">935 <small>W</small></span>
+                                <div class="detail-item">
+                                    <span class="detail-label">Free Heap</span>
+                                    <span class="detail-value" id="esp-free-heap">--</span>
+                                </div>
+                                <div class="detail-item">
+                                    <span class="detail-label">WiFi RSSI</span>
+                                    <span class="detail-value" id="esp-wifi-rssi">--</span>
+                                </div>
+                                <div class="detail-item">
+                                    <span class="detail-label">Last Seen</span>
+                                    <span class="detail-value" id="esp-last-seen">--</span>
+                                </div>
+                                <div class="detail-item">
+                                    <span class="detail-label">FW Version</span>
+                                    <span class="detail-value" id="esp-fw-version">--</span>
                                 </div>
                             </div>
                         </div>
                     </div>
 
-                    <!-- DEVICE STATUS CARDS -->
-                    <div class="section-label">Device Status</div>
-                    <div class="device-grid" id="home-devices">
+                    <!-- Device Status Cards -->
+                    <div class="section-label">Detail Perangkat</div>
+                    <div class="status-grid" id="status-cards">
+                        <!-- Generated by JS -->
+                    </div>
+
+                    <!-- Activity Timeline -->
+                    <div class="section-label">Aktivitas Hari Ini</div>
+                    <div id="timeline-container">
+                        <!-- Generated by JS -->
+                    </div>
+
+                    <!-- System Log -->
+                    <div class="section-label">Log Sistem</div>
+                    <div class="system-log" id="system-log-container">
                         <!-- Generated by JS -->
                     </div>
 
@@ -100,92 +314,153 @@
             </div>
 
             <!-- ======================================== -->
-            <!-- PAGE 2 : CONTROL                         -->
+            <!-- SETTINGS PAGE (Pengaturan)               -->
             <!-- ======================================== -->
-            <div class="page" id="page-control">
-                <div class="page-inner">
+            <div class="page fade-in" id="page-settings">
+                <div class="page-scroll">
 
-                    <!-- SEGMENTED CONTROL -->
-                    <div class="segmented-control" id="mode-selector">
-                        <button class="seg-btn active" data-mode="auto">
-                            <i class="bi bi-robot"></i> AUTO
-                        </button>
-                        <button class="seg-btn" data-mode="manual">
-                            <i class="bi bi-hand-index-thumb"></i> MANUAL
-                        </button>
+                    <!-- System Settings -->
+                    <div class="section-label">Pengaturan Sistem</div>
+                    <div class="settings-card">
+                        <div class="settings-field">
+                            <label>Nama Perangkat</label>
+                            <input type="text" id="sys-device-name" class="settings-input" placeholder="Nama perangkat ESP32" value="School Bell">
+                        </div>
+                        <div class="settings-field">
+                            <label>Firmware Version</label>
+                            <input type="text" id="sys-fw-version" class="settings-input" placeholder="v1.0.0" value="v1.0.0">
+                        </div>
+                        <div class="settings-field">
+                            <label>WiFi SSID</label>
+                            <input type="text" id="sys-wifi-ssid" class="settings-input" placeholder="SSID WiFi">
+                        </div>
+                        <div class="settings-field">
+                            <label>WiFi Password</label>
+                            <input type="password" id="sys-wifi-pass" class="settings-input" placeholder="Password WiFi">
+                        </div>
+                        <div class="settings-field">
+                            <label>Sync Interval (detik)</label>
+                            <input type="number" id="sys-sync-interval" class="settings-input" placeholder="60" value="60" min="10" max="3600">
+                        </div>
+                        <div class="settings-actions">
+                            <button class="settings-btn settings-btn-primary" id="sys-btn-save">
+                                <i class="bi bi-check-lg"></i>
+                                <span>Simpan Pengaturan</span>
+                            </button>
+                            <button class="settings-btn" id="sys-btn-restart">
+                                <i class="bi bi-arrow-clockwise text-warning"></i>
+                                <span>Restart ESP32</span>
+                            </button>
+                            <button class="settings-btn settings-btn-danger" id="sys-btn-reset">
+                                <i class="bi bi-exclamation-triangle"></i>
+                                <span>Factory Reset</span>
+                            </button>
+                        </div>
                     </div>
 
-                    <!-- AUTO MODE SECTION -->
-                    <div class="mode-section active" id="section-auto">
-                        <div class="section-label">
-                            <i class="bi bi-calendar-clock"></i> Schedule Editor
+                    <!-- Supabase Configuration -->
+                    <div class="section-label">Konfigurasi Supabase</div>
+                    <div class="settings-card">
+                        <div class="settings-field">
+                            <label>Supabase URL</label>
+                            <input type="text" id="sb-url" class="settings-input" placeholder="https://xxx.supabase.co">
                         </div>
-                        <div class="schedule-list" id="schedule-list">
+                        <div class="settings-field">
+                            <label>Supabase Anon Key</label>
+                            <input type="password" id="sb-anon-key" class="settings-input" placeholder="eyJhbGciOi...">
+                        </div>
+                        <div class="settings-field">
+                            <label>Test Connection</label>
+                            <div class="settings-inline">
+                                <button class="settings-btn settings-btn-primary" id="sb-btn-test">
+                                    <i class="bi bi-wifi"></i>
+                                    <span>Test Koneksi</span>
+                                </button>
+                                <button class="settings-btn settings-btn-primary" id="sb-btn-save">
+                                    <i class="bi bi-save"></i>
+                                    <span>Simpan</span>
+                                </button>
+                            </div>
+                            <div id="sb-test-result" class="d-none"></div>
+                        </div>
+                    </div>
+
+                    <!-- Audio Library -->
+                    <div class="section-label">Library Audio</div>
+                    <div class="settings-card">
+                        <div id="audio-library">
                             <!-- Generated by JS -->
                         </div>
-                    </div>
-
-                    <!-- MANUAL MODE SECTION -->
-                    <div class="mode-section" id="section-manual">
-                        <div class="section-label">
-                            <i class="bi bi-toggles"></i> Relay Control
+                        <div class="settings-actions">
+                            <input type="file" id="audio-upload-input" accept=".mp3,.wav,.ogg" style="display:none">
+                            <button class="settings-btn settings-btn-primary" id="audio-upload-btn">
+                                <i class="bi bi-upload"></i>
+                                <span>Upload Audio</span>
+                            </button>
                         </div>
-                        <div class="relay-list" id="relay-list">
-                            <!-- Generated by JS -->
+                        <div id="audio-upload-progress" class="d-none"></div>
+                    </div>
+
+                    <!-- Advanced Schedule Settings -->
+                    <div class="section-label">Pengaturan Jadwal Lanjutan</div>
+                    <div class="settings-card">
+                        <div class="settings-field settings-field-switch">
+                            <label>Auto Sync Jadwal</label>
+                            <label class="switch">
+                                <input type="checkbox" id="sched-auto-sync" checked>
+                                <span class="slider"></span>
+                            </label>
                         </div>
-                    </div>
-
-                </div>
-            </div>
-
-            <!-- ======================================== -->
-            <!-- PAGE 3 : MONITORING                      -->
-            <!-- ======================================== -->
-            <div class="page" id="page-monitoring">
-                <div class="page-inner">
-
-                    <!-- SECTION 1: CURRENT MONITORING -->
-                    <div class="section-label">
-                        <i class="bi bi-graph-up-arrow"></i> Current Monitoring
-                    </div>
-                    <div class="card mb-3">
-                        <div class="card-body p-3">
-                            <div class="current-monitor" id="current-monitor">
-                                <!-- Generated by JS -->
-                            </div>
-                            <div class="total-current-bar">
-                                <div class="tcb-header">
-                                    <span>Main Current Sensor</span>
-                                    <span class="tcb-value" id="total-current-value">0.00 A</span>
-                                </div>
-                                <div class="progress total-progress">
-                                    <div class="progress-bar total-bar" id="total-current-bar" style="width:0%"></div>
-                                </div>
-                            </div>
+                        <div class="settings-field settings-field-switch">
+                            <label>Aktifkan Relay saat Bel</label>
+                            <label class="switch">
+                                <input type="checkbox" id="sched-relay-on-bell">
+                                <span class="slider"></span>
+                            </label>
                         </div>
-                    </div>
-
-                    <!-- SECTION 2: SYSTEM STATISTICS -->
-                    <div class="section-label">
-                        <i class="bi bi-pie-chart"></i> System Statistics
-                    </div>
-                    <div class="card mb-3">
-                        <div class="card-body p-3">
-                            <div class="stat-grid" id="stat-grid">
-                                <!-- Generated by JS -->
-                            </div>
+                        <div class="settings-field">
+                            <label>Durasi Relay (detik)</label>
+                            <input type="number" id="sched-relay-duration" class="settings-input" placeholder="5" value="5" min="1" max="300">
                         </div>
+                        <button class="settings-btn settings-btn-primary" id="sched-adv-btn-save">
+                            <i class="bi bi-check-lg"></i>
+                            <span>Simpan Pengaturan</span>
+                        </button>
                     </div>
 
-                    <!-- SECTION 3: ACTIVITY LOG -->
-                    <div class="section-label">
-                        <i class="bi bi-journal-text"></i> Activity Log
+                    <!-- Notification Settings -->
+                    <div class="section-label">Notifikasi</div>
+                    <div class="settings-card">
+                        <div class="settings-field settings-field-switch">
+                            <label>Aktifkan Notifikasi</label>
+                            <label class="switch">
+                                <input type="checkbox" id="notif-enabled" checked>
+                                <span class="slider"></span>
+                            </label>
+                        </div>
+                        <div class="settings-field">
+                            <label>Email Notifikasi</label>
+                            <input type="email" id="notif-email" class="settings-input" placeholder="admin@sekolah.sch.id">
+                        </div>
+                        <button class="settings-btn settings-btn-primary" id="notif-btn-save">
+                            <i class="bi bi-check-lg"></i>
+                            <span>Simpan</span>
+                        </button>
                     </div>
-                    <div class="card mb-3">
-                        <div class="card-body p-0">
-                            <div class="activity-log" id="activity-log">
-                                <!-- Generated by JS -->
-                            </div>
+
+                    <!-- Danger Zone -->
+                    <div class="section-label danger-label">Zona Berbahaya</div>
+                    <div class="settings-card settings-card-danger">
+                        <p class="danger-desc">Tindakan di bawah ini tidak dapat dibatalkan. Harap berhati-hati.</p>
+                        <div class="settings-actions">
+                            <button class="settings-btn settings-btn-danger" id="danger-clear-logs">
+                                <i class="bi bi-trash3"></i>
+                                <span>Hapus Semua Log</span>
+                            </button>
+                            <button class="settings-btn settings-btn-danger" id="danger-clear-all">
+                                <i class="bi bi-database-exclamation"></i>
+                                <span>Hapus Semua Data</span>
+                            </button>
                         </div>
                     </div>
 
@@ -200,29 +475,109 @@
                 <i class="bi bi-house-fill nav-icon"></i>
                 <span class="nav-label">Home</span>
             </button>
-            <button class="nav-item" data-page="control">
-                <i class="bi bi-sliders2 nav-icon"></i>
-                <span class="nav-label">Control</span>
+            <button class="nav-item" data-page="jadwal">
+                <i class="bi bi-calendar-week nav-icon"></i>
+                <span class="nav-label">Jadwal</span>
             </button>
-            <button class="nav-item" data-page="monitoring">
-                <i class="bi bi-bar-chart-fill nav-icon"></i>
-                <span class="nav-label">Monitoring</span>
+            <button class="nav-item" data-page="status">
+                <i class="bi bi-bar-chart-steps nav-icon"></i>
+                <span class="nav-label">Status</span>
+            </button>
+            <button class="nav-item" data-page="settings">
+                <i class="bi bi-gear-fill nav-icon"></i>
+                <span class="nav-label">Pengaturan</span>
             </button>
         </nav>
 
     </div>
 
     <!-- ============================================ -->
+    <!-- SCHEDULE MODAL (Add/Edit)                    -->
+    <!-- ============================================ -->
+    <div class="modal-overlay d-none" id="schedule-modal-overlay">
+        <div class="modal-modern" id="schedule-modal">
+            <div class="modal-header-modern">
+                <h5 id="schedule-modal-title">Tambah Jadwal Baru</h5>
+                <button class="modal-close" id="btn-modal-cancel">&times;</button>
+            </div>
+            <form id="form-schedule">
+                <input type="hidden" id="sched-id">
+                <div class="modal-body-modern">
+                    <div class="modal-field">
+                        <label>Hari</label>
+                        <select id="sched-day" class="modal-select" required>
+                            <option value="Senin">Senin</option>
+                            <option value="Selasa">Selasa</option>
+                            <option value="Rabu">Rabu</option>
+                            <option value="Kamis">Kamis</option>
+                            <option value="Jumat">Jumat</option>
+                            <option value="Sabtu">Sabtu</option>
+                        </select>
+                    </div>
+                    <div class="modal-field">
+                        <label>Jam</label>
+                        <input type="time" id="sched-time" class="modal-input" required>
+                    </div>
+                    <div class="modal-field">
+                        <label>Nama Bel</label>
+                        <input type="text" id="sched-name" class="modal-input" placeholder="Bel Pergantian Jam">
+                    </div>
+                    <div class="modal-field">
+                        <label>File Audio</label>
+                        <input type="text" id="sched-audio" class="modal-input" placeholder="default.mp3">
+                    </div>
+                    <div class="modal-field">
+                        <label>Status</label>
+                        <select id="sched-status" class="modal-select">
+                            <option value="active">Aktif</option>
+                            <option value="inactive">Nonaktif</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="modal-footer-modern">
+                    <button type="button" class="modal-btn modal-btn-cancel" id="btn-modal-cancel2">Batal</button>
+                    <button type="submit" class="modal-btn modal-btn-save" id="btn-modal-save">Simpan</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- CONFIRM MODAL                                -->
+    <!-- ============================================ -->
+    <div class="modal-overlay d-none" id="confirm-overlay">
+        <div class="modal-modern modal-confirm" id="confirm-modal">
+            <div class="modal-body-modern" style="text-align:center; padding:32px;">
+                <div id="confirm-message">
+                    <i class="bi bi-exclamation-triangle" style="font-size:40px; color:var(--danger); display:block; margin-bottom:12px;"></i>
+                    Yakin ingin melanjutkan?
+                </div>
+                <div style="display:flex; gap:12px; justify-content:center; margin-top:20px;">
+                    <button class="modal-btn modal-btn-cancel" id="btn-confirm-no">Batal</button>
+                    <button class="modal-btn modal-btn-save" id="btn-confirm-yes" style="background:var(--danger);">Ya, Hapus</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- TOAST CONTAINER                              -->
+    <!-- ============================================ -->
+    <div id="toast-container"></div>
+
+    <!-- ============================================ -->
     <!-- SCRIPTS                                     -->
     <!-- ============================================ -->
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js">
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2">
     </script>
     
     <!-- App Scripts -->
+    <script src="js/config.js"></script>
     <script src="js/app.js"></script>
     <script src="js/auth.js"></script>
     <script src="js/home.js"></script>
     <script src="js/jadwal.js"></script>
     <script src="js/status.js"></script>
+    <script src="js/settings.js"></script>
 </body>
 </html>

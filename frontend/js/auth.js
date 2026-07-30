@@ -5,6 +5,9 @@
 let currentUser = null;
 let currentSession = null;
 
+// Expose for app.js to use
+window.currentUser = null;
+
 // Initialize auth
 async function initAuth() {
     try {
@@ -16,16 +19,26 @@ async function initAuth() {
         if (session) {
             currentSession = session;
             currentUser = session.user;
+            window.currentUser = session.user;
             console.log('[Auth] User already logged in:', currentUser.email);
-            showApp();
+            
+            // Use App module to show app
+            if (typeof App !== 'undefined' && App.showApp) {
+                App.showApp();
+            }
             return true;
         } else {
-            showLogin();
+            // Show login via App
+            if (typeof App !== 'undefined' && App.showLogin) {
+                App.showLogin();
+            }
             return false;
         }
     } catch (err) {
         console.error('[Auth] Init error:', err);
-        showLogin();
+        if (typeof App !== 'undefined' && App.showLogin) {
+            App.showLogin();
+        }
         return false;
     }
 }
@@ -57,16 +70,22 @@ async function handleLogin(username, password) {
                 if (error2) throw error2;
                 currentSession = data2.session;
                 currentUser = data2.user;
+                window.currentUser = data2.user;
             } else {
                 throw new Error('Username atau password salah');
             }
         } else {
             currentSession = data.session;
             currentUser = data.user;
+            window.currentUser = data.user;
         }
         
         console.log('[Auth] Login successful:', currentUser.email);
-        showApp();
+        
+        // Use App module to show app
+        if (typeof App !== 'undefined' && App.showApp) {
+            App.showApp();
+        }
         return true;
     } catch (err) {
         console.error('[Auth] Login failed:', err);
@@ -83,23 +102,21 @@ async function handleLogout() {
         
         currentUser = null;
         currentSession = null;
-        showLogin();
+        window.currentUser = null;
         
-        Swal.fire({
-            icon: 'success',
-            title: 'Berhasil Logout',
-            timer: 1500,
-            showConfirmButton: false,
-            toast: true,
-            position: 'top-end'
-        });
+        // Use App module to show login
+        if (typeof App !== 'undefined' && App.showLogin) {
+            App.showLogin();
+        }
+        
+        if (typeof App !== 'undefined' && App.showToast) {
+            App.showToast('Berhasil Logout', 'success');
+        }
     } catch (err) {
         console.error('[Auth] Logout error:', err);
-        Swal.fire({
-            icon: 'error',
-            title: 'Gagal logout',
-            text: err.message
-        });
+        if (typeof App !== 'undefined' && App.showToast) {
+            App.showToast('Gagal logout: ' + err.message, 'error');
+        }
     }
 }
 
@@ -111,38 +128,22 @@ function listenAuthChanges() {
         if (event === 'SIGNED_IN' && session) {
             currentSession = session;
             currentUser = session.user;
+            window.currentUser = session.user;
         } else if (event === 'SIGNED_OUT') {
             currentUser = null;
             currentSession = null;
-            showLogin();
+            window.currentUser = null;
+            if (typeof App !== 'undefined' && App.showLogin) {
+                App.showLogin();
+            }
         }
     });
 }
 
-// Show login page
-function showLogin() {
-    document.getElementById('page-login').classList.add('active');
-    document.getElementById('app-main').classList.add('d-none');
-    document.getElementById('app-main').classList.remove('d-block');
-}
-
-// Show main app
-function showApp() {
-    document.getElementById('page-login').classList.remove('active');
-    document.getElementById('app-main').classList.remove('d-none');
-    document.getElementById('app-main').classList.add('d-block');
-    
-    // Load initial data
-    loadHomeData();
-    loadScheduleData(getCurrentDayName());
-    loadStatusData();
-    
-    // Start clock
-    startClock();
-    
-    // Navigate to home by default
-    navigateTo('home');
-}
+// Expose functions globally for HTML onclick/events
+window.handleLogin = handleLogin;
+window.handleLogout = handleLogout;
+window.initAuth = initAuth;
 
 // Setup event listeners for auth
 document.addEventListener('DOMContentLoaded', function() {
@@ -150,57 +151,37 @@ document.addEventListener('DOMContentLoaded', function() {
     const btnLogin = document.getElementById('btn-login');
     const loginText = document.getElementById('login-text');
     const loginSpinner = document.getElementById('login-spinner');
-    const btnLogout = document.getElementById('btn-logout');
 
-    loginForm.addEventListener('submit', async function(e) {
-        e.preventDefault();
-        
-        const username = document.getElementById('login-username').value.trim();
-        const password = document.getElementById('login-password').value;
-        
-        if (!username || !password) {
-            Swal.fire({
-                icon: 'warning',
-                title: 'Lengkapi data',
-                text: 'Masukkan username dan password'
-            });
-            return;
-        }
-        
-        // Loading state
-        btnLogin.disabled = true;
-        loginText.textContent = 'Memproses...';
-        loginSpinner.classList.remove('d-none');
-        
-        try {
-            await handleLogin(username, password);
-        } catch (err) {
-            Swal.fire({
-                icon: 'error',
-                title: 'Login Gagal',
-                text: err.message || 'Username atau password salah',
-                confirmButtonColor: '#0d6efd'
-            });
-        } finally {
-            btnLogin.disabled = false;
-            loginText.textContent = 'Masuk';
-            loginSpinner.classList.add('d-none');
-        }
-    });
-
-    btnLogout.addEventListener('click', function() {
-        Swal.fire({
-            title: 'Yakin ingin logout?',
-            icon: 'question',
-            showCancelButton: true,
-            confirmButtonColor: '#dc3545',
-            cancelButtonColor: '#6c757d',
-            confirmButtonText: 'Ya, Logout',
-            cancelButtonText: 'Batal'
-        }).then((result) => {
-            if (result.isConfirmed) {
-                handleLogout();
+    if (loginForm) {
+        loginForm.addEventListener('submit', async function(e) {
+            e.preventDefault();
+            
+            const username = document.getElementById('login-username').value.trim();
+            const password = document.getElementById('login-password').value;
+            
+            if (!username || !password) {
+                if (typeof App !== 'undefined' && App.showToast) {
+                    App.showToast('Masukkan username dan password', 'warning');
+                }
+                return;
+            }
+            
+            // Loading state
+            if (btnLogin) btnLogin.disabled = true;
+            if (loginText) loginText.textContent = 'Memproses...';
+            if (loginSpinner) loginSpinner.classList.remove('d-none');
+            
+            try {
+                await handleLogin(username, password);
+            } catch (err) {
+                if (typeof App !== 'undefined' && App.showToast) {
+                    App.showToast(err.message || 'Username atau password salah', 'error');
+                }
+            } finally {
+                if (btnLogin) btnLogin.disabled = false;
+                if (loginText) loginText.textContent = 'Masuk';
+                if (loginSpinner) loginSpinner.classList.add('d-none');
             }
         });
-    });
+    }
 });

@@ -1,481 +1,498 @@
 // ============================================
-// SMART SCHOOL BELL IoT - Jadwal (Schedule) Page
+// SMART SCHOOL BELL IoT - Schedule Page
 // ============================================
 
-let currentDay = 'Senin';
+// ============================================
+// DOM REFS
+// ============================================
+const jadwalDom = {
+    dayTabsContainer: document.getElementById('day-tabs'),
+    tableBody: document.getElementById('schedule-table-body'),
+    searchInput: document.getElementById('jadwal-search-input'),
+    filterSelect: document.getElementById('jadwal-filter'),
+    pagination: document.getElementById('schedule-pagination'),
+    btnAdd: document.getElementById('btn-add-schedule'),
+    btnEdit: document.getElementById('btn-edit-schedule'),
+    btnDelete: document.getElementById('btn-delete-schedule'),
+    modal: document.getElementById('schedule-modal'),
+    modalOverlay: document.getElementById('modal-overlay'),
+    modalTitle: document.getElementById('schedule-modal-title'),
+    formSchedule: document.getElementById('form-schedule'),
+    inputId: document.getElementById('sched-id'),
+    inputTime: document.getElementById('sched-time'),
+    inputName: document.getElementById('sched-name'),
+    inputDay: document.getElementById('sched-day'),
+    inputAudio: document.getElementById('sched-audio'),
+    inputStatus: document.getElementById('sched-status'),
+    btnModalSave: document.getElementById('btn-modal-save'),
+    btnModalCancel: document.getElementById('btn-modal-cancel'),
+    confirmModal: document.getElementById('confirm-modal'),
+    confirmOverlay: document.getElementById('confirm-overlay'),
+    confirmMessage: document.getElementById('confirm-message'),
+    btnConfirmYes: document.getElementById('btn-confirm-yes'),
+    btnConfirmNo: document.getElementById('btn-confirm-no'),
+};
+
+const DAY_NAMES = ['Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
+const ITEMS_PER_PAGE = 10;
+
+// ============================================
+// STATE
+// ============================================
+let activeDay = 'Senin';
+let allSchedules = [];
+let filteredSchedules = [];
 let currentPage = 1;
-const ITEMS_PER_PAGE = 20;
-let scheduleModal = null;
+let editingId = null;
+let deleteTargetId = null;
 
-// Initialize modal
-document.addEventListener('DOMContentLoaded', function() {
-    scheduleModal = new bootstrap.Modal(document.getElementById('modalSchedule'));
-});
+// ============================================
+// DAY TABS
+// ============================================
+function renderDayTabs() {
+    const container = jadwalDom.dayTabsContainer;
+    if (!container) return;
 
-// Load schedule data
+    container.innerHTML = '';
+    
+    DAY_NAMES.forEach(day => {
+        const btn = document.createElement('button');
+        btn.className = `day-tab ${day === activeDay ? 'active' : ''}`;
+        btn.dataset.day = day;
+        btn.textContent = day;
+        btn.addEventListener('click', () => {
+            activeDay = day;
+            renderDayTabs();
+            loadScheduleData(day);
+        });
+        container.appendChild(btn);
+    });
+}
+
+// ============================================
+// LOAD SCHEDULE DATA
+// ============================================
 async function loadScheduleData(day) {
+    activeDay = day || activeDay;
+    currentPage = 1;
+
+    const container = jadwalDom.tableBody;
+    if (!container) return;
+
     try {
-        const sb = initSupabase();
-        currentDay = day || getCurrentDayName();
+        App.showSkeleton('schedule-table-body', 'table', 5);
         
-        const tbody = document.getElementById('jadwal-tbody');
-        tbody.innerHTML = `
-            <tr>
-                <td colspan="8" class="text-center py-4">
-                    <div class="spinner-border text-primary" role="status">
-                        <span class="visually-hidden">Loading...</span>
-                    </div>
-                    <p class="text-muted mt-2 mb-0">Memuat jadwal...</p>
-                </td>
-            </tr>
-        `;
-        
-        // Get schedules with audio info
-        const { data: schedules, error } = await sb
-            .from('schedules')
-            .select('*, audios(audio_name, audio_file)')
-            .eq('day', currentDay)
-            .order('time', { ascending: true });
-        
-        if (error) throw error;
-        
-        if (!schedules || schedules.length === 0) {
-            tbody.innerHTML = `
-                <tr>
-                    <td colspan="8" class="text-center py-4 text-muted">
-                        <i class="bi bi-calendar-x fs-2 d-block mb-2"></i>
-                        Tidak ada jadwal untuk hari ${currentDay}
-                    </td>
-                </tr>
+        const sb = window.initSupabase();
+        if (!sb) {
+            container.innerHTML = `
+                <tr><td colspan="6" style="text-align:center; padding:24px; color:var(--text-light);">
+                    <i class="bi bi-database-slash" style="font-size:32px; display:block; margin-bottom:8px;"></i>
+                    Tidak dapat terhubung ke database
+                </td></tr>
             `;
             return;
         }
-        
-        renderScheduleTable(schedules);
+
+        let query = sb.from('schedules').select('*').order('time', { ascending: true });
+
+        // Filter by day
+        if (activeDay && activeDay !== 'all') {
+            query = query.eq('day', activeDay);
+        }
+
+        const { data, error } = await query;
+
+        if (error) {
+            console.error('[Jadwal] Fetch error:', error);
+            container.innerHTML = `
+                <tr><td colspan="6" style="text-align:center; padding:24px; color:var(--danger);">
+                    <i class="bi bi-exclamation-triangle" style="font-size:32px; display:block; margin-bottom:8px;"></i>
+                    Gagal memuat jadwal: ${error.message}
+                </td></tr>
+            `;
+            return;
+        }
+
+        allSchedules = data || [];
+        applyFilters();
+
     } catch (err) {
-        console.error('[Jadwal] Load error:', err);
-        document.getElementById('jadwal-tbody').innerHTML = `
-            <tr>
-                <td colspan="8" class="text-center py-4 text-danger">
-                    <i class="bi bi-exclamation-triangle fs-2 d-block mb-2"></i>
-                    Gagal memuat jadwal: ${err.message}
-                </td>
-            </tr>
+        console.error('[Jadwal] Error:', err);
+        container.innerHTML = `
+            <tr><td colspan="6" style="text-align:center; padding:24px; color:var(--danger);">
+                <i class="bi bi-exclamation-triangle" style="font-size:32px; display:block; margin-bottom:8px;"></i>
+                ${err.message}
+            </td></tr>
         `;
     }
 }
 
-// Render schedule table
-function renderScheduleTable(schedules) {
-    const tbody = document.getElementById('jadwal-tbody');
-    const filterStatus = document.getElementById('filter-status').value;
-    const searchQuery = document.getElementById('search-jadwal').value.toLowerCase();
+// ============================================
+// FILTERS
+// ============================================
+function applyFilters() {
+    const search = (jadwalDom.searchInput?.value || '').toLowerCase();
+    const filter = jadwalDom.filterSelect?.value || 'all';
+
+    filteredSchedules = allSchedules.filter(item => {
+        // Day filter
+        if (activeDay && activeDay !== 'all' && item.day !== activeDay) return false;
+        
+        // Status filter
+        if (filter !== 'all' && item.status !== filter) return false;
+        
+        // Search
+        if (search) {
+            const matchName = (item.name || '').toLowerCase().includes(search);
+            const matchTime = (item.time || '').includes(search);
+            const matchDay = (item.day || '').toLowerCase().includes(search);
+            const matchAudio = (item.audio || '').toLowerCase().includes(search);
+            if (!matchName && !matchTime && !matchDay && !matchAudio) return false;
+        }
+        
+        return true;
+    });
+
+    // Pagination
+    const totalPages = Math.ceil(filteredSchedules.length / ITEMS_PER_PAGE) || 1;
+    if (currentPage > totalPages) currentPage = totalPages;
     
-    // Filter
-    let filtered = schedules;
-    if (filterStatus !== 'all') {
-        filtered = filtered.filter(s => s.status === filterStatus);
-    }
-    if (searchQuery) {
-        filtered = filtered.filter(s => 
-            s.audios?.audio_name?.toLowerCase().includes(searchQuery) ||
-            s.time?.includes(searchQuery)
-        );
-    }
-    
-    if (filtered.length === 0) {
-        tbody.innerHTML = `
-            <tr>
-                <td colspan="8" class="text-center py-4 text-muted">
-                    Tidak ada hasil pencarian
-                </td>
-            </tr>
+    const start = (currentPage - 1) * ITEMS_PER_PAGE;
+    const pageItems = filteredSchedules.slice(start, start + ITEMS_PER_PAGE);
+
+    renderTable(pageItems);
+    renderPagination(totalPages);
+}
+
+// ============================================
+// RENDER TABLE
+// ============================================
+function renderTable(items) {
+    const container = jadwalDom.tableBody;
+    if (!container) return;
+
+    if (items.length === 0) {
+        container.innerHTML = `
+            <tr><td colspan="6" style="text-align:center; padding:32px; color:var(--text-light);">
+                <i class="bi bi-inbox" style="font-size:40px; display:block; margin-bottom:8px;"></i>
+                Tidak ada jadwal untuk ${activeDay}
+            </td></tr>
         `;
         return;
     }
+
+    container.innerHTML = '';
     
-    // Pagination
-    const totalPages = Math.ceil(filtered.length / ITEMS_PER_PAGE);
-    if (currentPage > totalPages) currentPage = 1;
-    const start = (currentPage - 1) * ITEMS_PER_PAGE;
-    const pageItems = filtered.slice(start, start + ITEMS_PER_PAGE);
-    
-    let html = '';
-    pageItems.forEach((s, index) => {
-        const num = start + index + 1;
-        const audioName = s.audios?.audio_name || 'Unknown';
-        const audioFile = s.audios?.audio_file || '';
-        
-        html += `
-            <tr class="${s.status === 'active' ? '' : 'table-secondary'}">
-                <td class="text-center fw-semibold">${num}</td>
-                <td>${s.day}</td>
-                <td class="fw-semibold">${s.time.slice(0, 5)}</td>
-                <td>${audioName}</td>
-                <td class="text-center">
-                    <button class="btn btn-sm btn-outline-warning btn-preview-audio" 
-                            data-audio="${audioFile}" title="Preview Audio">
+    items.forEach((item, index) => {
+        const tr = document.createElement('tr');
+        tr.style.animation = `fadeSlideUp 0.3s ease ${index * 0.03}s both`;
+        tr.innerHTML = `
+            <td>${item.day}</td>
+            <td><strong>${item.time?.slice(0, 5) || '--:--'}</strong></td>
+            <td>${item.name || 'Bel'}</td>
+            <td>${item.audio || '-'}</td>
+            <td>
+                <span class="badge-status ${item.status === 'active' ? 'active' : 'inactive'}">
+                    ${item.status === 'active' ? 'Aktif' : 'Nonaktif'}
+                </span>
+            </td>
+            <td>
+                <div style="display:flex; gap:6px;">
+                    <button class="action-btn preview" data-id="${item.id}" title="Preview">
                         <i class="bi bi-play-fill"></i>
                     </button>
-                </td>
-                <td class="text-center">
-                    <button class="btn btn-sm btn-outline-primary btn-edit-schedule" 
-                            data-id="${s.id}" title="Edit">
+                    <button class="action-btn edit" data-id="${item.id}" title="Edit">
                         <i class="bi bi-pencil"></i>
                     </button>
-                </td>
-                <td class="text-center">
-                    <button class="btn btn-sm btn-outline-danger btn-delete-schedule" 
-                            data-id="${s.id}" title="Hapus">
-                        <i class="bi bi-trash"></i>
+                    <button class="action-btn delete" data-id="${item.id}" title="Hapus">
+                        <i class="bi bi-trash3"></i>
                     </button>
-                </td>
-                <td class="text-center">
-                    <span class="badge ${s.status === 'active' ? 'bg-success' : 'bg-secondary'}">
-                        ${s.status === 'active' ? 'Aktif' : 'Nonaktif'}
-                    </span>
-                </td>
-            </tr>
+                </div>
+            </td>
         `;
+        container.appendChild(tr);
+
+        // Event listeners for action buttons
+        tr.querySelector('.preview').addEventListener('click', () => previewSchedule(item.id));
+        tr.querySelector('.edit').addEventListener('click', () => editSchedule(item.id));
+        tr.querySelector('.delete').addEventListener('click', () => confirmDelete(item.id, item.name));
     });
-    
-    tbody.innerHTML = html;
-    
-    // Render pagination
-    renderPagination(totalPages);
-    
-    // Attach events
-    attachScheduleEvents();
 }
 
-// Render pagination
+// ============================================
+// PAGINATION
+// ============================================
 function renderPagination(totalPages) {
-    const pagination = document.querySelector('#jadwal-pagination ul');
-    if (!pagination) return;
-    
+    const container = jadwalDom.pagination;
+    if (!container) return;
+
     if (totalPages <= 1) {
-        pagination.innerHTML = '';
+        container.innerHTML = '';
         return;
     }
-    
+
     let html = '';
-    html += `
-        <li class="page-item ${currentPage === 1 ? 'disabled' : ''}">
-            <button class="page-link" data-page="${currentPage - 1}" ${currentPage === 1 ? 'disabled' : ''}>
-                <i class="bi bi-chevron-left"></i>
-            </button>
-        </li>
-    `;
     
+    // Prev
+    html += `<li class="${currentPage <= 1 ? 'disabled' : ''}">
+        <button data-page="${currentPage - 1}" ${currentPage <= 1 ? 'disabled' : ''}>
+            <i class="bi bi-chevron-left"></i>
+        </button>
+    </li>`;
+
     for (let i = 1; i <= totalPages; i++) {
-        html += `
-            <li class="page-item ${i === currentPage ? 'active' : ''}">
-                <button class="page-link ${i === currentPage ? 'active' : ''}" data-page="${i}">${i}</button>
-            </li>
-        `;
+        html += `<li class="${i === currentPage ? 'active' : ''}">
+            <button data-page="${i}">${i}</button>
+        </li>`;
     }
-    
-    html += `
-        <li class="page-item ${currentPage === totalPages ? 'disabled' : ''}">
-            <button class="page-link" data-page="${currentPage + 1}" ${currentPage === totalPages ? 'disabled' : ''}>
-                <i class="bi bi-chevron-right"></i>
-            </button>
-        </li>
-    `;
-    
-    pagination.innerHTML = html;
-    
-    // Attach pagination events
-    pagination.querySelectorAll('.page-link').forEach(btn => {
+
+    // Next
+    html += `<li class="${currentPage >= totalPages ? 'disabled' : ''}">
+        <button data-page="${currentPage + 1}" ${currentPage >= totalPages ? 'disabled' : ''}>
+            <i class="bi bi-chevron-right"></i>
+        </button>
+    </li>`;
+
+    container.innerHTML = html;
+
+    // Event listeners
+    container.querySelectorAll('button').forEach(btn => {
         btn.addEventListener('click', function() {
             const page = parseInt(this.dataset.page);
-            if (page && page !== currentPage) {
+            if (!isNaN(page) && page >= 1 && page <= totalPages) {
                 currentPage = page;
-                loadScheduleData(currentDay);
+                applyFilters();
             }
         });
     });
 }
 
-// Attach schedule button events
-function attachScheduleEvents() {
-    // Edit buttons
-    document.querySelectorAll('.btn-edit-schedule').forEach(btn => {
-        btn.addEventListener('click', function() {
-            const id = this.dataset.id;
-            openEditModal(id);
-        });
-    });
-    
-    // Delete buttons
-    document.querySelectorAll('.btn-delete-schedule').forEach(btn => {
-        btn.addEventListener('click', function() {
-            const id = this.dataset.id;
-            confirmDeleteSchedule(id);
-        });
-    });
-    
-    // Preview audio buttons
-    document.querySelectorAll('.btn-preview-audio').forEach(btn => {
-        btn.addEventListener('click', function() {
-            const audioFile = this.dataset.audio;
-            previewAudio(audioFile);
-        });
-    });
-}
+// ============================================
+// CRUD OPERATIONS
+// ============================================
 
-// Open modal for new schedule
-async function openAddModal() {
-    document.getElementById('modalScheduleTitle').textContent = 'Tambah Jadwal';
-    document.getElementById('schedule-id').value = '';
-    document.getElementById('form-schedule').reset();
-    document.getElementById('schedule-day').value = currentDay;
-    document.getElementById('schedule-status').value = 'active';
-    
-    await loadAudioOptions();
-    scheduleModal.show();
-}
-
-// Open modal for edit schedule
-async function openEditModal(id) {
+// Preview (test audio)
+async function previewSchedule(id) {
     try {
-        const sb = initSupabase();
-        document.getElementById('modalScheduleTitle').textContent = 'Edit Jadwal';
-        
-        const { data: schedule, error } = await sb
-            .from('schedules')
-            .select('*')
-            .eq('id', id)
-            .single();
-        
-        if (error) throw error;
-        
-        document.getElementById('schedule-id').value = schedule.id;
-        document.getElementById('schedule-day').value = schedule.day;
-        document.getElementById('schedule-time').value = schedule.time.slice(0, 5);
-        document.getElementById('schedule-status').value = schedule.status;
-        
-        await loadAudioOptions(schedule.audio_id);
-        scheduleModal.show();
+        const sb = window.initSupabase();
+        if (sb) {
+            const schedule = allSchedules.find(s => s.id === id);
+            await sb.from('esp_commands').insert([{
+                command: 'play_audio',
+                params: schedule?.audio || 'default.mp3',
+                status: 'pending',
+                created_at: new Date().toISOString()
+            }]);
+            App.showToast(`Memutar ${schedule?.audio || 'default.mp3'}`, 'success');
+        }
     } catch (err) {
-        console.error('[Jadwal] Edit error:', err);
-        Swal.fire({
-            icon: 'error',
-            title: 'Gagal',
-            text: err.message
-        });
+        App.showToast('Gagal preview', 'error');
     }
 }
 
-// Load audio options into select
-async function loadAudioOptions(selectedId) {
-    try {
-        const sb = initSupabase();
-        const { data: audios, error } = await sb
-            .from('audios')
-            .select('*')
-            .order('id', { ascending: true });
-        
-        if (error) throw error;
-        
-        const select = document.getElementById('schedule-audio');
-        select.innerHTML = '<option value="">Pilih Audio</option>';
-        
-        audios.forEach(audio => {
-            const option = document.createElement('option');
-            option.value = audio.id;
-            option.textContent = audio.audio_name;
-            if (selectedId && audio.id === selectedId) {
-                option.selected = true;
-            }
-            select.appendChild(option);
-        });
-    } catch (err) {
-        console.error('[Jadwal] Load audio error:', err);
-    }
+// Edit
+function editSchedule(id) {
+    const schedule = allSchedules.find(s => s.id === id);
+    if (!schedule) return;
+
+    editingId = id;
+    jadwalDom.modalTitle.textContent = 'Edit Jadwal';
+    jadwalDom.inputId.value = schedule.id;
+    jadwalDom.inputTime.value = schedule.time?.slice(0, 5) || '';
+    jadwalDom.inputName.value = schedule.name || '';
+    jadwalDom.inputDay.value = schedule.day;
+    jadwalDom.inputAudio.value = schedule.audio || '';
+    jadwalDom.inputStatus.value = schedule.status || 'active';
+    jadwalDom.formSchedule.dataset.mode = 'edit';
+    
+    openModal();
 }
 
-// Save schedule (create or update)
-async function saveSchedule() {
-    const id = document.getElementById('schedule-id').value;
-    const day = document.getElementById('schedule-day').value;
-    const time = document.getElementById('schedule-time').value;
-    const audioId = document.getElementById('schedule-audio').value;
-    const status = document.getElementById('schedule-status').value;
+// Open modal for add
+function openAddModal() {
+    editingId = null;
+    jadwalDom.modalTitle.textContent = 'Tambah Jadwal Baru';
+    jadwalDom.inputId.value = '';
+    jadwalDom.inputTime.value = '';
+    jadwalDom.inputName.value = 'Bel Pergantian Jam';
+    jadwalDom.inputDay.value = activeDay;
+    jadwalDom.inputAudio.value = 'default.mp3';
+    jadwalDom.inputStatus.value = 'active';
+    jadwalDom.formSchedule.dataset.mode = 'add';
     
-    if (!day || !time || !audioId) {
-        Swal.fire({
-            icon: 'warning',
-            title: 'Lengkapi data',
-            text: 'Semua field harus diisi'
-        });
+    openModal();
+}
+
+function openModal() {
+    jadwalDom.modal.classList.remove('d-none');
+    jadwalDom.modalOverlay.classList.remove('d-none');
+    document.body.style.overflow = 'hidden';
+}
+
+function closeModal() {
+    jadwalDom.modal.classList.add('d-none');
+    jadwalDom.modalOverlay.classList.add('d-none');
+    document.body.style.overflow = '';
+    editingId = null;
+}
+
+// Save schedule
+async function handleSaveSchedule(e) {
+    e.preventDefault();
+
+    const mode = jadwalDom.formSchedule.dataset.mode;
+    const data = {
+        time: jadwalDom.inputTime.value,
+        name: jadwalDom.inputName.value,
+        day: jadwalDom.inputDay.value,
+        audio: jadwalDom.inputAudio.value,
+        status: jadwalDom.inputStatus.value,
+    };
+
+    if (!data.time || !data.day) {
+        App.showToast('Waktu dan hari harus diisi', 'warning');
         return;
     }
-    
-    const btnSave = document.getElementById('btn-save-schedule');
-    const saveText = document.getElementById('save-text');
-    const saveSpinner = document.getElementById('save-spinner');
-    
-    btnSave.disabled = true;
-    saveText.textContent = 'Menyimpan...';
-    saveSpinner.classList.remove('d-none');
-    
+
+    jadwalDom.btnModalSave.disabled = true;
+    jadwalDom.btnModalSave.textContent = 'Menyimpan...';
+
     try {
-        const sb = initSupabase();
-        const data = {
-            day,
-            time: time + ':00',
-            audio_id: parseInt(audioId),
-            status
-        };
-        
-        if (id) {
-            // Update
-            const { error } = await sb
-                .from('schedules')
-                .update(data)
-                .eq('id', id);
-            
-            if (error) throw error;
-            
-            Swal.fire({
-                icon: 'success',
-                title: 'Jadwal Diperbarui',
-                timer: 1500,
-                showConfirmButton: false,
-                toast: true,
-                position: 'top-end'
-            });
-        } else {
-            // Insert
-            const { error } = await sb
-                .from('schedules')
-                .insert(data);
-            
-            if (error) {
-                if (error.code === '23505') {
-                    throw new Error('Jadwal untuk hari dan jam tersebut sudah ada');
-                }
-                throw error;
-            }
-            
-            Swal.fire({
-                icon: 'success',
-                title: 'Jadwal Ditambahkan',
-                timer: 1500,
-                showConfirmButton: false,
-                toast: true,
-                position: 'top-end'
-            });
+        const sb = window.initSupabase();
+        if (!sb) {
+            App.showToast('Database tidak terhubung', 'error');
+            return;
         }
-        
-        scheduleModal.hide();
-        loadScheduleData(currentDay);
+
+        if (mode === 'edit') {
+            const id = jadwalDom.inputId.value;
+            const { error } = await sb.from('schedules').update(data).eq('id', id);
+            if (error) throw error;
+            App.showToast('Jadwal berhasil diperbarui', 'success');
+        } else {
+            const { error } = await sb.from('schedules').insert([data]);
+            if (error) throw error;
+            App.showToast('Jadwal baru berhasil ditambahkan', 'success');
+        }
+
+        closeModal();
+        loadScheduleData(activeDay);
+
     } catch (err) {
         console.error('[Jadwal] Save error:', err);
-        Swal.fire({
-            icon: 'error',
-            title: 'Gagal',
-            text: err.message
-        });
+        App.showToast('Gagal menyimpan: ' + err.message, 'error');
     } finally {
-        btnSave.disabled = false;
-        saveText.textContent = 'Simpan';
-        saveSpinner.classList.add('d-none');
+        jadwalDom.btnModalSave.disabled = false;
+        jadwalDom.btnModalSave.textContent = 'Simpan';
     }
 }
 
-// Confirm delete schedule
-function confirmDeleteSchedule(id) {
-    Swal.fire({
-        title: 'Hapus Jadwal?',
-        text: 'Anda yakin ingin menghapus jadwal ini?',
-        icon: 'warning',
-        showCancelButton: true,
-        confirmButtonColor: '#dc3545',
-        cancelButtonColor: '#6c757d',
-        confirmButtonText: 'Ya, Hapus',
-        cancelButtonText: 'Batal'
-    }).then(async (result) => {
-        if (result.isConfirmed) {
-            try {
-                const sb = initSupabase();
-                const { error } = await sb
-                    .from('schedules')
-                    .delete()
-                    .eq('id', id);
-                
-                if (error) throw error;
-                
-                Swal.fire({
-                    icon: 'success',
-                    title: 'Jadwal Dihapus',
-                    timer: 1500,
-                    showConfirmButton: false,
-                    toast: true,
-                    position: 'top-end'
-                });
-                
-                loadScheduleData(currentDay);
-            } catch (err) {
-                console.error('[Jadwal] Delete error:', err);
-                Swal.fire({
-                    icon: 'error',
-                    title: 'Gagal',
-                    text: err.message
-                });
-            }
+// Delete confirmation
+function confirmDelete(id, name) {
+    deleteTargetId = id;
+    jadwalDom.confirmMessage.innerHTML = `
+        <i class="bi bi-exclamation-triangle" style="font-size:40px; color:var(--danger); display:block; margin-bottom:12px;"></i>
+        Yakin ingin menghapus jadwal <strong>"${name || 'Bel'}"</strong>?<br>
+        <span style="font-size:13px; color:var(--text-light);">Tindakan ini tidak dapat dibatalkan.</span>
+    `;
+    jadwalDom.confirmModal.classList.remove('d-none');
+    jadwalDom.confirmOverlay.classList.remove('d-none');
+}
+
+async function handleConfirmDelete() {
+    if (!deleteTargetId) return;
+
+    try {
+        const sb = window.initSupabase();
+        if (!sb) {
+            App.showToast('Database tidak terhubung', 'error');
+            return;
         }
-    });
+
+        const { error } = await sb.from('schedules').delete().eq('id', deleteTargetId);
+        if (error) throw error;
+
+        App.showToast('Jadwal berhasil dihapus', 'success');
+        closeConfirmModal();
+        loadScheduleData(activeDay);
+
+    } catch (err) {
+        console.error('[Jadwal] Delete error:', err);
+        App.showToast('Gagal menghapus: ' + err.message, 'error');
+    } finally {
+        deleteTargetId = null;
+    }
 }
 
-// Preview audio (placeholder - actual preview would need audio files)
-function previewAudio(audioFile) {
-    // In production, this would play the audio file from Supabase storage
-    Swal.fire({
-        icon: 'info',
-        title: 'Preview Audio',
-        text: `Memutar: ${audioFile}`,
-        timer: 2000,
-        showConfirmButton: false,
-        toast: true,
-        position: 'top-end'
-    });
+function closeConfirmModal() {
+    jadwalDom.confirmModal.classList.add('d-none');
+    jadwalDom.confirmOverlay.classList.add('d-none');
+    deleteTargetId = null;
 }
 
-// Setup jadwal event listeners
-document.addEventListener('DOMContentLoaded', function() {
-    // Day selector
-    document.querySelectorAll('.day-btn').forEach(btn => {
-        btn.addEventListener('click', function() {
-            document.querySelectorAll('.day-btn').forEach(b => b.classList.remove('active'));
-            this.classList.add('active');
-            currentDay = this.dataset.day;
+// ============================================
+// EVENT LISTENERS
+// ============================================
+
+// Search input with debounce
+let searchTimer = null;
+if (jadwalDom.searchInput) {
+    jadwalDom.searchInput.addEventListener('input', function() {
+        clearTimeout(searchTimer);
+        searchTimer = setTimeout(() => {
             currentPage = 1;
-            loadScheduleData(currentDay);
-        });
+            applyFilters();
+        }, 300);
     });
-    
-    // Add schedule button
-    document.getElementById('btn-add-schedule').addEventListener('click', openAddModal);
-    
-    // Save schedule button
-    document.getElementById('btn-save-schedule').addEventListener('click', saveSchedule);
-    
-    // Search
-    document.getElementById('search-jadwal').addEventListener('input', function() {
+}
+
+// Filter select
+if (jadwalDom.filterSelect) {
+    jadwalDom.filterSelect.addEventListener('change', function() {
         currentPage = 1;
-        loadScheduleData(currentDay);
+        applyFilters();
     });
-    
-    // Filter status
-    document.getElementById('filter-status').addEventListener('change', function() {
-        currentPage = 1;
-        loadScheduleData(currentDay);
-    });
-    
-    // Reset modal on close
-    document.getElementById('modalSchedule').addEventListener('hidden.bs.modal', function() {
-        document.getElementById('form-schedule').reset();
-    });
+}
+
+// Add button
+if (jadwalDom.btnAdd) {
+    jadwalDom.btnAdd.addEventListener('click', openAddModal);
+}
+
+// Form submit
+if (jadwalDom.formSchedule) {
+    jadwalDom.formSchedule.addEventListener('submit', handleSaveSchedule);
+}
+
+// Modal close buttons
+if (jadwalDom.btnModalCancel) {
+    jadwalDom.btnModalCancel.addEventListener('click', closeModal);
+}
+if (jadwalDom.modalOverlay) {
+    jadwalDom.modalOverlay.addEventListener('click', closeModal);
+}
+
+// Confirm modal
+if (jadwalDom.btnConfirmYes) {
+    jadwalDom.btnConfirmYes.addEventListener('click', handleConfirmDelete);
+}
+if (jadwalDom.btnConfirmNo) {
+    jadwalDom.btnConfirmNo.addEventListener('click', closeConfirmModal);
+}
+if (jadwalDom.confirmOverlay) {
+    jadwalDom.confirmOverlay.addEventListener('click', closeConfirmModal);
+}
+
+// Keyboard shortcut for search
+document.addEventListener('keydown', function(e) {
+    if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
+        e.preventDefault();
+        jadwalDom.searchInput?.focus();
+    }
 });
+
+// ============================================
+// INIT
+// ============================================
+renderDayTabs();
+console.log('[Jadwal] Module loaded');

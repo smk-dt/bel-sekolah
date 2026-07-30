@@ -28,7 +28,7 @@ document.addEventListener('DOMContentLoaded', async function() {
 // Navigation
 function navigateTo(page) {
     // Hide all pages
-    document.querySelectorAll('.page-content').forEach(el => el.classList.remove('active'));
+    document.querySelectorAll('.page').forEach(el => el.classList.remove('active'));
     
     // Show target page
     const targetPage = document.getElementById(`page-${page}`);
@@ -49,11 +49,11 @@ function navigateTo(page) {
         case 'home':
             loadHomeData();
             break;
-        case 'jadwal':
-            loadScheduleData(getCurrentDayName());
+        case 'control':
+            // loadControlData();
             break;
-        case 'status':
-            loadStatusData();
+        case 'monitoring':
+            // loadMonitoringData();
             break;
     }
 }

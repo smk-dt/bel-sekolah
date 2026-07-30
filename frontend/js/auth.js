@@ -8,32 +8,50 @@ let currentSession = null;
 // Expose for app.js to use
 window.currentUser = null;
 
+// Hardcoded users for local development
+const LOCAL_USERS = [
+    { username: 'admin', password: 'admin123', role: 'admin', displayName: 'Administrator' },
+    { username: 'operator', password: 'operator123', role: 'operator', displayName: 'Operator' },
+];
+
 // Initialize auth
 async function initAuth() {
     try {
-        const sb = initSupabase();
-        const { data: { session }, error } = await sb.auth.getSession();
-        
-        if (error) throw error;
-        
-        if (session) {
-            currentSession = session;
+        // Cek session tersimpan di localStorage (bypass/login sebelumnya)
+        const saved = localStorage.getItem('local-session');
+        if (saved) {
+            const session = JSON.parse(saved);
             currentUser = session.user;
+            currentSession = session;
             window.currentUser = session.user;
-            console.log('[Auth] User already logged in:', currentUser.email);
-            
-            // Use App module to show app
+            console.log('[Auth] User already logged in:', session.user.username);
             if (typeof App !== 'undefined' && App.showApp) {
                 App.showApp();
             }
             return true;
-        } else {
-            // Show login via App
-            if (typeof App !== 'undefined' && App.showLogin) {
-                App.showLogin();
-            }
-            return false;
         }
+
+        // Coba cek Supabase session
+        const sb = initSupabase();
+        if (sb) {
+            const { data: { session }, error } = await sb.auth.getSession();
+            if (!error && session) {
+                currentSession = session;
+                currentUser = session.user;
+                window.currentUser = session.user;
+                console.log('[Auth] Supabase user logged in:', currentUser.email);
+                if (typeof App !== 'undefined' && App.showApp) {
+                    App.showApp();
+                }
+                return true;
+            }
+        }
+
+        // Tidak ada session, tampilkan login
+        if (typeof App !== 'undefined' && App.showLogin) {
+            App.showLogin();
+        }
+        return false;
     } catch (err) {
         console.error('[Auth] Init error:', err);
         if (typeof App !== 'undefined' && App.showLogin) {
@@ -46,47 +64,57 @@ async function initAuth() {
 // Login form handler
 async function handleLogin(username, password) {
     try {
-        const sb = initSupabase();
-        
-        // Sign in with email/password
-        // Username is stored in email field for Supabase Auth
-        const email = username + '@smartbell.local';
-        
-        const { data, error } = await sb.auth.signInWithPassword({
-            email: email,
-            password: password
-        });
+        // 1. Coba login ke user lokal
+        const localUser = LOCAL_USERS.find(u => u.username === username && u.password === password);
+        if (localUser) {
+            currentSession = { type: 'local' };
+            currentUser = {
+                username: localUser.username,
+                role: localUser.role,
+                displayName: localUser.displayName,
+            };
+            window.currentUser = currentUser;
 
-        if (error) {
-            // Fallback: try direct sign in with username as email if custom
-            console.error('[Auth] Login error:', error.message);
-            
-            // Try with the actual email if configured
-            if (username.includes('@')) {
-                const { data: data2, error: error2 } = await sb.auth.signInWithPassword({
-                    email: username,
+            // Simpan session ke localStorage
+            localStorage.setItem('local-session', JSON.stringify({
+                user: currentUser,
+                type: 'local',
+                timestamp: Date.now()
+            }));
+
+            console.log('[Auth] Local login successful:', localUser.username);
+            if (typeof App !== 'undefined' && App.showApp) {
+                App.showApp();
+            }
+            return true;
+        }
+
+        // 2. Fallback ke Supabase Auth (email format)
+        const sb = initSupabase();
+        if (sb) {
+            try {
+                const email = username.includes('@') ? username : username + '@smartbell.local';
+                const { data, error } = await sb.auth.signInWithPassword({
+                    email: email,
                     password: password
                 });
-                if (error2) throw error2;
-                currentSession = data2.session;
-                currentUser = data2.user;
-                window.currentUser = data2.user;
-            } else {
-                throw new Error('Username atau password salah');
+                if (!error && data.session) {
+                    currentSession = data.session;
+                    currentUser = data.user;
+                    window.currentUser = data.user;
+                    console.log('[Auth] Supabase login successful:', currentUser.email);
+                    if (typeof App !== 'undefined' && App.showApp) {
+                        App.showApp();
+                    }
+                    return true;
+                }
+            } catch (e) {
+                // Supabase gagal, lanjut ke error below
             }
-        } else {
-            currentSession = data.session;
-            currentUser = data.user;
-            window.currentUser = data.user;
         }
-        
-        console.log('[Auth] Login successful:', currentUser.email);
-        
-        // Use App module to show app
-        if (typeof App !== 'undefined' && App.showApp) {
-            App.showApp();
-        }
-        return true;
+
+        // 3. Kalau semua gagal
+        throw new Error('Username atau password salah');
     } catch (err) {
         console.error('[Auth] Login failed:', err);
         throw err;
@@ -96,19 +124,26 @@ async function handleLogin(username, password) {
 // Logout handler
 async function handleLogout() {
     try {
+        // Hapus session lokal
+        localStorage.removeItem('local-session');
+        localStorage.removeItem('sb-session');
+        localStorage.removeItem('user');
+
+        // Logout dari Supabase kalau ada
         const sb = initSupabase();
-        const { error } = await sb.auth.signOut();
-        if (error) throw error;
-        
+        if (sb) {
+            try {
+                await sb.auth.signOut();
+            } catch (_) {}
+        }
+
         currentUser = null;
         currentSession = null;
         window.currentUser = null;
-        
-        // Use App module to show login
+
         if (typeof App !== 'undefined' && App.showLogin) {
             App.showLogin();
         }
-        
         if (typeof App !== 'undefined' && App.showToast) {
             App.showToast('Berhasil Logout', 'success');
         }
@@ -123,21 +158,23 @@ async function handleLogout() {
 // Check auth state changes
 function listenAuthChanges() {
     const sb = initSupabase();
-    sb.auth.onAuthStateChange((event, session) => {
-        console.log('[Auth] State change:', event);
-        if (event === 'SIGNED_IN' && session) {
-            currentSession = session;
-            currentUser = session.user;
-            window.currentUser = session.user;
-        } else if (event === 'SIGNED_OUT') {
-            currentUser = null;
-            currentSession = null;
-            window.currentUser = null;
-            if (typeof App !== 'undefined' && App.showLogin) {
-                App.showLogin();
+    if (sb) {
+        sb.auth.onAuthStateChange((event, session) => {
+            console.log('[Auth] State change:', event);
+            if (event === 'SIGNED_IN' && session) {
+                currentSession = session;
+                currentUser = session.user;
+                window.currentUser = session.user;
+            } else if (event === 'SIGNED_OUT') {
+                currentUser = null;
+                currentSession = null;
+                window.currentUser = null;
+                if (typeof App !== 'undefined' && App.showLogin) {
+                    App.showLogin();
+                }
             }
-        }
-    });
+        });
+    }
 }
 
 // Expose functions globally for HTML onclick/events

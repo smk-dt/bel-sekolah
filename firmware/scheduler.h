@@ -9,6 +9,7 @@
 
 #include <Arduino.h>
 #include <ArduinoJson.h>
+#include <Preferences.h>
 #include "config.h"
 #include "utils.h"
 #include "logger.h"
@@ -39,6 +40,10 @@ public:
     
     // Manual trigger
     static void triggerSchedule(int scheduleId);
+    
+    // ===== NEW: NVS persistence =====
+    static void saveToNVS();
+    static bool loadFromNVS();
     
 private:
     static const int MAX_SCHEDULES = 100;

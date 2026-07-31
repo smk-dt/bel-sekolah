@@ -169,6 +169,9 @@ const App = (function() {
                 if (typeof loadHomeData === 'function') {
                     loadHomeData();
                 }
+                if (typeof initRelayToggles === 'function') {
+                    setTimeout(initRelayToggles, 500); // Delay until DOM rendered
+                }
                 break;
             case 'jadwal':
                 if (typeof loadScheduleData === 'function') {

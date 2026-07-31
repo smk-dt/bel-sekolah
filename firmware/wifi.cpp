@@ -3,6 +3,7 @@
 // ============================================
 #include <WiFi.h>
 #include "wifi_manager.h"
+#include "supabase.h"
 
 Preferences WiFiManager::preferences;
 bool WiFiManager::credentialsLoaded = false;
@@ -113,6 +114,10 @@ bool WiFiManager::connect(const String& ssid, const String& password) {
         LOG_INFO("WIFI", "Connected! IP: " + getIPAddress());
         g_sysStatus.wifiConnected = true;
         g_sysStatus.ipAddress = getIPAddress();
+
+        // Flush any missed logs that were buffered while WiFi was down
+        SupabaseClient::flushMissedLogs();
+
         return true;
     } else {
         LOG_ERROR("WIFI", "Failed to connect after " + String(MAX_RETRY_COUNT) + " attempts");
@@ -143,5 +148,10 @@ void WiFiManager::ensureConnected() {
     } else {
         LOG_WARN("WIFI", "No saved credentials, trying defaults");
         WiFi.begin(WIFI_SSID_DEFAULT, WIFI_PASSWORD_DEFAULT);
+    }
+    
+    // After reconnection attempt, flush missed logs if connected
+    if (isConnected()) {
+        SupabaseClient::flushMissedLogs();
     }
 }

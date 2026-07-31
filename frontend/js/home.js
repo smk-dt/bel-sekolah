@@ -120,7 +120,7 @@ async function fetchDeviceStatus(sb) {
         { name: 'WiFi', status: 'ok', desc: 'Terhubung' },
     ];
 
-    // Try to get actual status from supabase_esp_status table
+    // Try to get actual status from supabase esp_status table
     try {
         const { data: espStatus } = await sb
             .from('esp_status')
@@ -132,7 +132,7 @@ async function fetchDeviceStatus(sb) {
             const status = espStatus[0];
             App.updateEspStatus(status.status === 'online');
             
-            // Update relay status if available
+            // Update relay status
             if (status.relay1 !== undefined) {
                 devices[3].status = status.relay1 ? 'ok' : 'warning';
                 devices[3].desc = status.relay1 ? 'ON' : 'OFF';
@@ -145,9 +145,73 @@ async function fetchDeviceStatus(sb) {
                 devices[5].status = status.wifi_rssi > -70 ? 'ok' : 'warning';
                 devices[5].desc = `${status.wifi_rssi} dBm`;
             }
-            if (status.dfplayer !== undefined) {
-                devices[1].status = status.dfplayer ? 'ok' : 'error';
-                devices[1].desc = status.dfplayer ? 'Ready' : 'Error';
+            if (status.dfplayer_status !== undefined) {
+                devices[1].status = status.dfplayer_status ? 'ok' : 'error';
+                devices[1].desc = status.dfplayer_status ? 'Ready' : 'Error';
+            }
+
+            // Enhanced status: ESP32 with uptime & free heap
+            if (status.uptime_seconds !== undefined || status.free_heap !== undefined) {
+                let desc = '';
+                if (status.uptime_seconds !== undefined) {
+                    const h = Math.floor(status.uptime_seconds / 3600);
+                    const m = Math.floor((status.uptime_seconds % 3600) / 60);
+                    desc += `${h}h ${m}m`;
+                }
+                if (status.free_heap !== undefined) {
+                    const heapKB = (status.free_heap / 1024).toFixed(1);
+                    desc += desc ? ` | ${heapKB} KB` : `${heapKB} KB`;
+                }
+                devices[0].desc = desc || 'Online';
+            }
+
+            // System state & CPU freq — update ESP32 status based on system_state
+            if (status.system_state !== undefined) {
+                const stateMap = {
+                    0: 'Init',
+                    1: 'WiFi...',
+                    2: 'Online',
+                    3: 'Sync...',
+                    4: 'Error',
+                    5: 'OTA',
+                };
+                const stateStr = stateMap[status.system_state] || `State ${status.system_state}`;
+                // Append to existing desc or replace
+                if (devices[0].desc !== 'Online') {
+                    devices[0].desc += ` | ${stateStr}`;
+                } else {
+                    devices[0].desc = stateStr;
+                }
+            }
+
+            // RTC time — update RTC DS3231 desc
+            if (status.rtc_time) {
+                devices[2].desc = status.rtc_time;
+            }
+
+            // Bell active — update visual indicator (render akan handle)
+            if (status.bell_active !== undefined) {
+                if (status.bell_active) {
+                    // Bell is ringing — we can show this in the hero section
+                    if (homeDom.heroSysStatus) {
+                        homeDom.heroSysStatus.textContent = 'Bel Berbunyi';
+                        homeDom.heroSysStatus.style.color = 'var(--danger)';
+                    }
+                } else {
+                    if (homeDom.heroSysStatus && homeDom.heroSysStatus.textContent === 'Bel Berbunyi') {
+                        homeDom.heroSysStatus.textContent = 'Aktif';
+                        homeDom.heroSysStatus.style.color = '';
+                    }
+                }
+            }
+
+            // Schedules count — update badge if available
+            if (status.schedules_count !== undefined) {
+                const count = status.schedules_count;
+                if (homeDom.nextbellStatusBadge && homeDom.nextbellStatusBadge.textContent !== 'Berbunyi') {
+                    // Show count in badge tooltip or enhance description
+                    homeDom.nextbellStatusBadge.title = `${count} jadwal aktif`;
+                }
             }
         }
     } catch (err) {
@@ -274,8 +338,114 @@ function startCountdown(targetTime) {
 }
 
 // ============================================
-// QUICK ACTIONS
+// COMMAND FEEDBACK - Wait for ESP to execute
 // ============================================
+async function sendCommandWithFeedback(command, label, timeoutMs = 10000) {
+    const sb = window.initSupabase();
+    if (!sb) {
+        App.showToast('Tidak dapat mengirim perintah', 'warning');
+        return false;
+    }
+
+    try {
+        // Insert command
+        const { data: insertData, error: insertError } = await sb
+            .from('esp_commands')
+            .insert([{
+                command: command,
+                status: 'pending',
+                created_at: new Date().toISOString()
+            }])
+            .select();
+
+        if (insertError) throw insertError;
+
+        // Get the inserted command ID
+        const commandId = insertData?.[0]?.id;
+        if (!commandId) {
+            App.showToast(`Perintah ${label} dikirim (tanpa ID)`, 'info');
+            return true;
+        }
+
+        // Show pending toast
+        const toast = App.showToast(`${label}... menunggu ESP`, 'info', timeoutMs + 2000);
+
+        // Poll for status change
+        const startTime = Date.now();
+        let executed = false;
+
+        while (Date.now() - startTime < timeoutMs) {
+            await new Promise(r => setTimeout(r, 1000)); // Poll every 1 second
+
+            const { data, error: pollError } = await sb
+                .from('esp_commands')
+                .select('status')
+                .eq('id', commandId)
+                .single();
+
+            if (pollError) continue; // Retry on error
+
+            if (data?.status === 'done') {
+                App.dismissToast(toast);
+                App.showToast(`${label} berhasil`, 'success');
+                executed = true;
+                break;
+            } else if (data?.status === 'failed') {
+                App.dismissToast(toast);
+                App.showToast(`${label} gagal di ESP`, 'error');
+                executed = true;
+                break;
+            }
+        }
+
+        if (!executed) {
+            App.dismissToast(toast);
+            App.showToast(`${label} timeout (ESP tidak merespon)`, 'warning');
+            return false;
+        }
+
+        return true;
+    } catch (err) {
+        console.error(`[Home] Command error (${command}):`, err);
+        App.showToast(`Gagal mengirim ${label}`, 'error');
+        return false;
+    }
+}
+
+// ============================================
+// RELAY TOGGLE SWITCH
+// ============================================
+async function toggleRelay(relayNum, turnOn) {
+    const action = turnOn ? 'on' : 'off';
+    const command = `relay_${relayNum}_${action}`;
+    const label = `Relay ${relayNum} ${action.toUpperCase()}`;
+    await sendCommandWithFeedback(command, label, 5000);
+}
+
+// Update relay checkboxes from ESP status
+function updateRelayCheckboxes(relay1On, relay2On) {
+    document.querySelectorAll('.relay-checkbox').forEach(cb => {
+        const relay = parseInt(cb.dataset.relay);
+        const targetState = relay === 1 ? relay1On : relay2On;
+        if (targetState !== undefined && cb.checked !== targetState) {
+            cb.checked = targetState;
+        }
+    });
+}
+
+// Init relay toggle listeners
+function initRelayToggles() {
+    document.querySelectorAll('.relay-checkbox').forEach(cb => {
+        cb.addEventListener('change', async function() {
+            const relay = this.dataset.relay;
+            const turnOn = this.checked;
+            // Disable during request
+            this.disabled = true;
+            await toggleRelay(relay, turnOn);
+            this.disabled = false;
+        });
+    });
+}
 
 // Test Audio
 if (homeDom.btnTestAudio) {
@@ -283,69 +453,18 @@ if (homeDom.btnTestAudio) {
         const loading = homeDom.qaAudioLoading;
         loading.classList.remove('d-none');
         
-        try {
-            const sb = window.initSupabase();
-            if (sb) {
-                // Send command via supabase
-                await sb.from('esp_commands').insert([{
-                    command: 'test_audio',
-                    status: 'pending',
-                    created_at: new Date().toISOString()
-                }]);
-                App.showToast('Perintah test audio dikirim', 'success');
-            } else {
-                App.showToast('Tidak dapat mengirim perintah', 'warning');
-            }
-        } catch (err) {
-            console.error('[Home] Test audio error:', err);
-            App.showToast('Gagal mengirim perintah test audio', 'error');
-        } finally {
-            setTimeout(() => {
-                loading.classList.add('d-none');
-            }, 1000);
-        }
+        await sendCommandWithFeedback('test_audio', 'Test Audio', 15000);
+        
+        setTimeout(() => {
+            loading.classList.add('d-none');
+        }, 1500);
     });
 }
-
-// Relay buttons
-homeDom.relayButtons.forEach(btn => {
-    btn.addEventListener('click', async function() {
-        const relay = this.dataset.relay;
-        const action = this.dataset.action;
-        
-        try {
-            const sb = window.initSupabase();
-            if (sb) {
-                await sb.from('esp_commands').insert([{
-                    command: `relay_${relay}_${action}`,
-                    status: 'pending',
-                    created_at: new Date().toISOString()
-                }]);
-                App.showToast(`Relay ${relay} ${action === 'on' ? 'ON' : 'OFF'}`, 'success');
-            }
-        } catch (err) {
-            console.error('[Home] Relay error:', err);
-            App.showToast('Gagal mengontrol relay', 'error');
-        }
-    });
-});
 
 // Sync RTC
 if (homeDom.btnSyncRtc) {
     homeDom.btnSyncRtc.addEventListener('click', async function() {
-        try {
-            const sb = window.initSupabase();
-            if (sb) {
-                await sb.from('esp_commands').insert([{
-                    command: 'sync_rtc',
-                    status: 'pending',
-                    created_at: new Date().toISOString()
-                }]);
-                App.showToast('Perintah sync RTC dikirim', 'success');
-            }
-        } catch (err) {
-            App.showToast('Gagal sync RTC', 'error');
-        }
+        await sendCommandWithFeedback('sync_rtc', 'Sync RTC', 10000);
     });
 }
 
@@ -362,6 +481,7 @@ if (homeDom.btnRestartEsp) {
     homeDom.btnRestartEsp.addEventListener('click', async function() {
         if (!confirm('Yakin ingin merestart ESP32?')) return;
         
+        // No polling feedback for restart since ESP will reboot
         try {
             const sb = window.initSupabase();
             if (sb) {
@@ -370,7 +490,7 @@ if (homeDom.btnRestartEsp) {
                     status: 'pending',
                     created_at: new Date().toISOString()
                 }]);
-                App.showToast('Perintah restart dikirim', 'success');
+                App.showToast('Perintah restart dikirim, ESP akan reboot...', 'success', 5000);
             }
         } catch (err) {
             App.showToast('Gagal restart ESP32', 'error');

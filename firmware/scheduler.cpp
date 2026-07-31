@@ -10,6 +10,13 @@ String Scheduler::lastScheduleJson = "";
 
 void Scheduler::begin() {
     LOG_INFO("SCHED", "Scheduler initialized");
+
+    // Try to load schedule from NVS (Preferences)
+    if (loadFromNVS()) {
+        LOG_INFO("SCHED", "Schedule restored from NVS: " + String(scheduleCount) + " entries");
+    } else {
+        LOG_INFO("SCHED", "No saved schedule in NVS");
+    }
 }
 
 void Scheduler::task(void* parameter) {
@@ -77,6 +84,9 @@ void Scheduler::updateSchedule(const String& jsonResponse) {
     lastScheduleJson = jsonResponse;
     
     LOG_INFO("SCHED", "Loaded " + String(count) + " schedule entries");
+
+    // Save to NVS for persistence after reboot
+    saveToNVS();
 }
 
 void Scheduler::clearSchedule() {
@@ -202,6 +212,69 @@ String Scheduler::getCurrentDayStr() {
 int Scheduler::getTrackNumberFromAudioId(int audioId) {
     // Map audio_id to track number (usually 1:1 mapping)
     return audioId;
+}
+
+// ============================================
+// NVS PERSISTENCE
+// ============================================
+void Scheduler::saveToNVS() {
+    Preferences prefs;
+    if (!prefs.begin("scheduler", false)) {
+        LOG_ERROR("SCHED", "Failed to open NVS for writing");
+        return;
+    }
+
+    // Save count
+    prefs.putInt("count", scheduleCount);
+
+    // Save each schedule entry as individual keys
+    for (int i = 0; i < scheduleCount; i++) {
+        String prefix = "s" + String(i) + "_";
+        prefs.putInt((prefix + "id").c_str(), schedules[i].id);
+        prefs.putInt((prefix + "aid").c_str(), schedules[i].audioId);
+        prefs.putString((prefix + "day").c_str(), schedules[i].dayOfWeek);
+        prefs.putString((prefix + "time").c_str(), schedules[i].timeStr);
+        prefs.putInt((prefix + "track").c_str(), schedules[i].trackNumber);
+        prefs.putBool((prefix + "en").c_str(), schedules[i].enabled);
+        prefs.putBool((prefix + "trig").c_str(), schedules[i].alreadyTriggered);
+    }
+
+    prefs.end();
+    LOG_INFO("SCHED", "Saved " + String(scheduleCount) + " schedules to NVS");
+}
+
+bool Scheduler::loadFromNVS() {
+    Preferences prefs;
+    if (!prefs.begin("scheduler", true)) {
+        LOG_ERROR("SCHED", "Failed to open NVS for reading");
+        return false;
+    }
+
+    int count = prefs.getInt("count", 0);
+    if (count <= 0) {
+        prefs.end();
+        return false;
+    }
+
+    clearSchedule();
+
+    for (int i = 0; i < count && i < MAX_SCHEDULES; i++) {
+        String prefix = "s" + String(i) + "_";
+        schedules[i].id = prefs.getInt((prefix + "id").c_str(), 0);
+        schedules[i].audioId = prefs.getInt((prefix + "aid").c_str(), 0);
+        schedules[i].dayOfWeek = prefs.getString((prefix + "day").c_str(), "");
+        schedules[i].timeStr = prefs.getString((prefix + "time").c_str(), "");
+        schedules[i].trackNumber = prefs.getInt((prefix + "track").c_str(), 1);
+        schedules[i].enabled = prefs.getBool((prefix + "en").c_str(), true);
+        schedules[i].alreadyTriggered = prefs.getBool((prefix + "trig").c_str(), false);
+    }
+
+    scheduleCount = count;
+    scheduleLoaded = (count > 0);
+    lastScheduleJson = ""; // Will be refreshed on next fetch
+
+    prefs.end();
+    return scheduleLoaded;
 }
 
 void Scheduler::triggerSchedule(int scheduleId) {

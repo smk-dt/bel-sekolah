@@ -1,0 +1,29 @@
+# Dependencies
+frontend/node_modules/
+
+# Old backup firmware
+firmware/old_backup/
+
+# Build output
+dist/
+build/
+.out/
+
+# Screenshots & artifacts
+*.png
+ss_*.png
+screenshot_*.png
+
+# Logs
+*.log
+npm-debug.log*
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# OS files
+Thumbs.db
+.DS_Store
+</｜｜DSML｜｜>

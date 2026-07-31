@@ -12,10 +12,8 @@ const jadwalDom = {
     filterSelect: document.getElementById('jadwal-filter'),
     pagination: document.getElementById('schedule-pagination'),
     btnAdd: document.getElementById('btn-add-schedule'),
-    btnEdit: document.getElementById('btn-edit-schedule'),
-    btnDelete: document.getElementById('btn-delete-schedule'),
     modal: document.getElementById('schedule-modal'),
-    modalOverlay: document.getElementById('modal-overlay'),
+    modalOverlay: document.getElementById('schedule-modal-overlay'),
     modalTitle: document.getElementById('schedule-modal-title'),
     formSchedule: document.getElementById('form-schedule'),
     inputId: document.getElementById('sched-id'),
@@ -26,6 +24,7 @@ const jadwalDom = {
     inputStatus: document.getElementById('sched-status'),
     btnModalSave: document.getElementById('btn-modal-save'),
     btnModalCancel: document.getElementById('btn-modal-cancel'),
+    btnModalCancel2: document.getElementById('btn-modal-cancel2'),
     confirmModal: document.getElementById('confirm-modal'),
     confirmOverlay: document.getElementById('confirm-overlay'),
     confirmMessage: document.getElementById('confirm-message'),
@@ -34,6 +33,7 @@ const jadwalDom = {
 };
 
 const DAY_NAMES = ['Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
+const DAY_MAP = { 'Senin': 1, 'Selasa': 2, 'Rabu': 3, 'Kamis': 4, 'Jumat': 5, 'Sabtu': 6 };
 const ITEMS_PER_PAGE = 10;
 
 // ============================================
@@ -45,6 +45,15 @@ let filteredSchedules = [];
 let currentPage = 1;
 let editingId = null;
 let deleteTargetId = null;
+
+// ============================================
+// AUDIO FILES (SD Card: 0001.mp3 - 0016.mp3)
+// ============================================
+const AUDIO_FILES = [];
+for (let i = 1; i <= 16; i++) {
+    const num = String(i).padStart(4, '0');
+    AUDIO_FILES.push({ value: i, label: `${num}.mp3` });
+}
 
 // ============================================
 // DAY TABS
@@ -93,14 +102,11 @@ async function loadScheduleData(day) {
             return;
         }
 
-        let query = sb.from('schedules').select('*').order('time', { ascending: true });
-
-        // Filter by day
-        if (activeDay && activeDay !== 'all') {
-            query = query.eq('day', activeDay);
-        }
-
-        const { data, error } = await query;
+        // Fetch schedules with join to audios table
+        const { data, error } = await sb
+            .from('schedules')
+            .select('*, audios(name, track_number)')
+            .order('time', { ascending: true });
 
         if (error) {
             console.error('[Jadwal] Fetch error:', error);
@@ -113,7 +119,22 @@ async function loadScheduleData(day) {
             return;
         }
 
-        allSchedules = data || [];
+        // Transform data to match frontend model
+        allSchedules = (data || []).map(item => ({
+            id: item.id,
+            day_of_week: item.day_of_week,
+            time: item.time,
+            audio_id: item.audio_id,
+            enabled: item.enabled,
+            // Derived fields for display
+            audio_name: item.audios?.name || 'Audio',
+            track_number: item.audios?.track_number || 0,
+            // Format audio file name from track number
+            audio_file: item.audios?.track_number 
+                ? String(item.audios.track_number).padStart(4, '0') + '.mp3' 
+                : '-',
+        }));
+
         applyFilters();
 
     } catch (err) {
@@ -135,19 +156,30 @@ function applyFilters() {
     const filter = jadwalDom.filterSelect?.value || 'all';
 
     filteredSchedules = allSchedules.filter(item => {
-        // Day filter
-        if (activeDay && activeDay !== 'all' && item.day !== activeDay) return false;
+        // Day filter using day_of_week (contains day number)
+        if (activeDay && activeDay !== 'all') {
+            const dayNum = DAY_MAP[activeDay];
+            const days = (item.day_of_week || '').split(',').map(s => parseInt(s.trim()));
+            if (!days.includes(dayNum)) return false;
+        }
         
         // Status filter
-        if (filter !== 'all' && item.status !== filter) return false;
+        if (filter !== 'all') {
+            const isActive = item.enabled === true;
+            if (filter === 'active' && !isActive) return false;
+            if (filter === 'inactive' && isActive) return false;
+        }
         
         // Search
         if (search) {
-            const matchName = (item.name || '').toLowerCase().includes(search);
-            const matchTime = (item.time || '').includes(search);
-            const matchDay = (item.day || '').toLowerCase().includes(search);
-            const matchAudio = (item.audio || '').toLowerCase().includes(search);
-            if (!matchName && !matchTime && !matchDay && !matchAudio) return false;
+            const audioName = (item.audio_name || '').toLowerCase();
+            const audioFile = (item.audio_file || '').toLowerCase();
+            const time = (item.time || '').includes(search);
+            const dayMatch = DAY_NAMES.some(d => {
+                const dn = DAY_MAP[d];
+                return (item.day_of_week || '').split(',').map(s => parseInt(s.trim())).includes(dn) && d.toLowerCase().includes(search);
+            });
+            if (!audioName.includes(search) && !audioFile.includes(search) && !time && !dayMatch) return false;
         }
         
         return true;
@@ -184,16 +216,24 @@ function renderTable(items) {
     container.innerHTML = '';
     
     items.forEach((item, index) => {
+        // Compute day names from day_of_week
+        const dayNames = (item.day_of_week || '')
+            .split(',')
+            .map(s => parseInt(s.trim()))
+            .filter(n => n >= 1 && n <= 6)
+            .map(n => DAY_NAMES[n - 1])
+            .join(', ');
+
         const tr = document.createElement('tr');
         tr.style.animation = `fadeSlideUp 0.3s ease ${index * 0.03}s both`;
         tr.innerHTML = `
-            <td>${item.day}</td>
+            <td>${dayNames}</td>
             <td><strong>${item.time?.slice(0, 5) || '--:--'}</strong></td>
-            <td>${item.name || 'Bel'}</td>
-            <td>${item.audio || '-'}</td>
+            <td>${item.audio_name}</td>
+            <td>${item.audio_file}</td>
             <td>
-                <span class="badge-status ${item.status === 'active' ? 'active' : 'inactive'}">
-                    ${item.status === 'active' ? 'Aktif' : 'Nonaktif'}
+                <span class="badge-status ${item.enabled ? 'active' : 'inactive'}">
+                    ${item.enabled ? 'Aktif' : 'Nonaktif'}
                 </span>
             </td>
             <td>
@@ -215,7 +255,7 @@ function renderTable(items) {
         // Event listeners for action buttons
         tr.querySelector('.preview').addEventListener('click', () => previewSchedule(item.id));
         tr.querySelector('.edit').addEventListener('click', () => editSchedule(item.id));
-        tr.querySelector('.delete').addEventListener('click', () => confirmDelete(item.id, item.name));
+        tr.querySelector('.delete').addEventListener('click', () => confirmDelete(item.id, item.audio_name));
     });
 }
 
@@ -271,22 +311,40 @@ function renderPagination(totalPages) {
 // CRUD OPERATIONS
 // ============================================
 
-// Preview (test audio)
+// Preview (test audio via ESP32)
 async function previewSchedule(id) {
     try {
         const sb = window.initSupabase();
-        if (sb) {
-            const schedule = allSchedules.find(s => s.id === id);
-            await sb.from('esp_commands').insert([{
-                command: 'play_audio',
-                params: schedule?.audio || 'default.mp3',
-                status: 'pending',
-                created_at: new Date().toISOString()
-            }]);
-            App.showToast(`Memutar ${schedule?.audio || 'default.mp3'}`, 'success');
+        if (!sb) {
+            App.showToast('Database tidak terhubung', 'error');
+            return;
         }
+
+        const schedule = allSchedules.find(s => s.id === id);
+        if (!schedule) {
+            App.showToast('Jadwal tidak ditemukan', 'error');
+            return;
+        }
+
+        // Get device_id from first registered device
+        const { data: devices } = await sb.from('devices').select('device_id').limit(1);
+        if (!devices || devices.length === 0) {
+            App.showToast('Tidak ada perangkat terdaftar', 'error');
+            return;
+        }
+
+        await sb.from('esp_commands').insert([{
+            device_id: devices[0].device_id,
+            command: 'test_audio',
+            params: String(schedule.track_number || 1),
+            status: 'pending',
+            created_at: new Date().toISOString()
+        }]);
+
+        App.showToast(`Perintah test audio track ${schedule.track_number || 1} dikirim`, 'success');
     } catch (err) {
-        App.showToast('Gagal preview', 'error');
+        console.error('[Jadwal] Preview error:', err);
+        App.showToast('Gagal preview: ' + err.message, 'error');
     }
 }
 
@@ -299,10 +357,10 @@ function editSchedule(id) {
     jadwalDom.modalTitle.textContent = 'Edit Jadwal';
     jadwalDom.inputId.value = schedule.id;
     jadwalDom.inputTime.value = schedule.time?.slice(0, 5) || '';
-    jadwalDom.inputName.value = schedule.name || '';
-    jadwalDom.inputDay.value = schedule.day;
-    jadwalDom.inputAudio.value = schedule.audio || '';
-    jadwalDom.inputStatus.value = schedule.status || 'active';
+    jadwalDom.inputName.value = schedule.audio_name || '';
+    jadwalDom.inputDay.value = schedule.day_of_week || '1,2,3,4,5';
+    jadwalDom.inputAudio.value = schedule.track_number || 1;
+    jadwalDom.inputStatus.value = schedule.enabled ? 'active' : 'inactive';
     jadwalDom.formSchedule.dataset.mode = 'edit';
     
     openModal();
@@ -313,17 +371,21 @@ function openAddModal() {
     editingId = null;
     jadwalDom.modalTitle.textContent = 'Tambah Jadwal Baru';
     jadwalDom.inputId.value = '';
-    jadwalDom.inputTime.value = '';
-    jadwalDom.inputName.value = 'Bel Pergantian Jam';
-    jadwalDom.inputDay.value = activeDay;
-    jadwalDom.inputAudio.value = 'default.mp3';
+    jadwalDom.inputTime.value = '07:00';
+    jadwalDom.inputName.value = '';
+    jadwalDom.inputDay.value = String(DAY_MAP[activeDay] || 1);
+    jadwalDom.inputAudio.value = 1;
     jadwalDom.inputStatus.value = 'active';
     jadwalDom.formSchedule.dataset.mode = 'add';
     
     openModal();
 }
 
+// Open modal and populate audio dropdown
 function openModal() {
+    // Populate audio dropdown (Problem 6 fix)
+    populateAudioDropdown();
+    
     jadwalDom.modal.classList.remove('d-none');
     jadwalDom.modalOverlay.classList.remove('d-none');
     document.body.style.overflow = 'hidden';
@@ -336,20 +398,53 @@ function closeModal() {
     editingId = null;
 }
 
+// ============================================
+// AUDIO DROPDOWN
+// ============================================
+function populateAudioDropdown() {
+    const select = jadwalDom.inputAudio;
+    if (!select) return;
+
+    const currentValue = select.value;
+    select.innerHTML = '';
+
+    AUDIO_FILES.forEach(audio => {
+        const option = document.createElement('option');
+        option.value = audio.value;
+        option.textContent = audio.label;
+        select.appendChild(option);
+    });
+
+    // Restore selected value if editing
+    if (currentValue) {
+        select.value = currentValue;
+    }
+}
+
+// ============================================
+// DAY-OF-WEEK CHECKBOX HANDLER
+// ============================================
+// The sched-day select stores day_of_week as comma-separated numbers
+// For simplicity, we use day_of_week string directly in the hidden field
+// The UI shows day tabs, but for add/edit we store the numeric format
+
 // Save schedule
 async function handleSaveSchedule(e) {
     e.preventDefault();
 
     const mode = jadwalDom.formSchedule.dataset.mode;
+    const audioId = parseInt(jadwalDom.inputAudio.value) || 1;
+    const enabled = jadwalDom.inputStatus.value === 'active';
+
+    // Build data matching database schema
     const data = {
+        audio_id: audioId,
+        day_of_week: jadwalDom.inputDay.value,
         time: jadwalDom.inputTime.value,
-        name: jadwalDom.inputName.value,
-        day: jadwalDom.inputDay.value,
-        audio: jadwalDom.inputAudio.value,
-        status: jadwalDom.inputStatus.value,
+        enabled: enabled,
     };
 
-    if (!data.time || !data.day) {
+    if (!data.time || !data.day_of_week) {
         App.showToast('Waktu dan hari harus diisi', 'warning');
         return;
     }
@@ -467,6 +562,9 @@ if (jadwalDom.formSchedule) {
 // Modal close buttons
 if (jadwalDom.btnModalCancel) {
     jadwalDom.btnModalCancel.addEventListener('click', closeModal);
+}
+if (jadwalDom.btnModalCancel2) {
+    jadwalDom.btnModalCancel2.addEventListener('click', closeModal);
 }
 if (jadwalDom.modalOverlay) {
     jadwalDom.modalOverlay.addEventListener('click', closeModal);

@@ -15,35 +15,19 @@ void Heartbeat::begin() {
 }
 
 void Heartbeat::task(void* parameter) {
-    LOG_INFO("HEARTBEAT", "Heartbeat task started");
+    LOG_INFO("HEARTBEAT", "Health monitor task started (heartbeat via Supabase task)");
     
     while (1) {
-        if (WiFi.status() == WL_CONNECTED) {
-            unsigned long now = millis();
-            
-            if (now - lastHeartbeatTime >= HEARTBEAT_INTERVAL_MS) {
-                LOG_DEBUG("HEARTBEAT", "Sending heartbeat...");
-                
-                // Send heartbeat via Supabase
-                lastHeartbeatResult = SupabaseClient::sendHeartbeat();
-                lastHeartbeatTime = now;
-                
-                if (lastHeartbeatResult) {
-                    LOG_DEBUG("HEARTBEAT", "Heartbeat sent successfully");
-                } else {
-                    LOG_WARN("HEARTBEAT", "Heartbeat failed");
-                }
-            }
-            
-            // Check system health periodically
-            static unsigned long lastHealthCheck = 0;
-            if (now - lastHealthCheck > 60000) { // Every 60 seconds
-                checkHealth();
-                lastHealthCheck = now;
-            }
+        unsigned long now = millis();
+        
+        // Health check every 60 seconds (no HTTP - purely local)
+        static unsigned long lastHealthCheck = 0;
+        if (now - lastHealthCheck > 60000) {
+            checkHealth();
+            lastHealthCheck = now;
         }
         
-        vTaskDelay(2000 / portTICK_PERIOD_MS); // Check every 2 seconds
+        vTaskDelay(5000 / portTICK_PERIOD_MS); // Check every 5 seconds
     }
 }
 

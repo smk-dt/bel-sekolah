@@ -81,7 +81,7 @@ async function fetchEspStatus(sb) {
 }
 
 function renderEspStatus(status) {
-    const isOnline = status.status === 'online';
+    const isOnline = status.online === true;
     
     // Update global ESP status
     App.updateEspStatus(isOnline);
@@ -115,7 +115,7 @@ function renderEspStatus(status) {
         statusDom.espLastSeen.textContent = status.updated_at ? formatTimeAgo(status.updated_at) : '--';
     }
     if (statusDom.espFwVersion) {
-        statusDom.espFwVersion.textContent = status.fw_version || 'v1.0.0';
+        statusDom.espFwVersion.textContent = status.firmware_version || 'v1.0.0';
     }
 
     // Render status cards based on data
@@ -170,11 +170,11 @@ function renderEspStatus(status) {
             badge: 'success',
         },
         {
-            title: 'HTTP Server',
-            desc: status.http_server ? 'Active' : 'Inactive',
-            icon: 'bi-globe',
-            color: status.http_server ? 'icon-success' : 'icon-danger',
-            badge: status.http_server ? 'success' : 'error',
+            title: 'Bell Status',
+            desc: status.bell_status || 'standby',
+            icon: 'bi-bell',
+            color: status.bell_status === 'ringing' ? 'icon-danger' : 'icon-secondary',
+            badge: status.bell_status === 'ringing' ? 'warning' : 'success',
         },
     ];
 
@@ -256,7 +256,7 @@ async function fetchTimeline(sb) {
 
     try {
         const { data, error } = await sb
-            .from('bell_log')
+            .from('bell_history')
             .select('*')
             .order('created_at', { ascending: false })
             .limit(10);
@@ -319,7 +319,7 @@ async function fetchSystemLog(sb) {
 
     try {
         const { data, error } = await sb
-            .from('system_log')
+            .from('system_logs')
             .select('*')
             .order('created_at', { ascending: false })
             .limit(20);

@@ -149,22 +149,26 @@
                             </div>
                         </button>
                         <div class="qa-grid">
-                            <button class="qa-btn qa-relay" data-relay="1" data-action="on">
-                                <i class="bi bi-toggle-on text-success"></i>
-                                <span>Relay 1 ON</span>
-                            </button>
-                            <button class="qa-btn qa-relay" data-relay="1" data-action="off">
-                                <i class="bi bi-toggle-off text-secondary"></i>
-                                <span>Relay 1 OFF</span>
-                            </button>
-                            <button class="qa-btn qa-relay" data-relay="2" data-action="on">
-                                <i class="bi bi-toggle-on text-success"></i>
-                                <span>Relay 2 ON</span>
-                            </button>
-                            <button class="qa-btn qa-relay" data-relay="2" data-action="off">
-                                <i class="bi bi-toggle-off text-secondary"></i>
-                                <span>Relay 2 OFF</span>
-                            </button>
+                            <div class="relay-toggle-card" data-relay="1">
+                                <div class="relay-toggle-info">
+                                    <i class="bi bi-toggle-on text-primary"></i>
+                                    <span>Relay 1</span>
+                                </div>
+                                <label class="relay-switch">
+                                    <input type="checkbox" class="relay-checkbox" data-relay="1">
+                                    <span class="relay-slider"></span>
+                                </label>
+                            </div>
+                            <div class="relay-toggle-card" data-relay="2">
+                                <div class="relay-toggle-info">
+                                    <i class="bi bi-toggle-on text-primary"></i>
+                                    <span>Relay 2</span>
+                                </div>
+                                <label class="relay-switch">
+                                    <input type="checkbox" class="relay-checkbox" data-relay="2">
+                                    <span class="relay-slider"></span>
+                                </label>
+                            </div>
                             <button class="qa-btn" id="btn-sync-rtc">
                                 <i class="bi bi-arrow-repeat text-primary"></i>
                                 <span>Sync RTC</span>

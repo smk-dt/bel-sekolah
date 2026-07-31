@@ -86,17 +86,17 @@ function renderEspStatus(status) {
     // Update global ESP status
     App.updateEspStatus(isOnline);
 
-    // ESP Hero
+    // ESP Hero (device_name tidak ada di esp_status, gunakan device_id)
     if (statusDom.espHeroTitle) {
-        statusDom.espHeroTitle.textContent = `ESP32 ${status.device_name || 'School Bell'}`;
+        statusDom.espHeroTitle.textContent = `ESP32 ${status.device_id || 'School Bell'}`;
     }
 
     // Detail items
     if (statusDom.espUptime) {
-        statusDom.espUptime.textContent = formatUptime(status.uptime) || '--';
+        statusDom.espUptime.textContent = formatUptime(status.uptime_seconds) || '--';
     }
     if (statusDom.espChipId) {
-        statusDom.espChipId.textContent = status.chip_id || '--';
+        statusDom.espChipId.textContent = status.device_id || '--';
     }
     if (statusDom.espFreeHeap) {
         statusDom.espFreeHeap.textContent = status.free_heap ? formatBytes(status.free_heap) : '--';
@@ -118,56 +118,56 @@ function renderEspStatus(status) {
         statusDom.espFwVersion.textContent = status.firmware_version || 'v1.0.0';
     }
 
-    // Render status cards based on data
+    // Render status cards based on data (kolom sesuai schema esp_status)
     const cards = [
         {
             title: 'DFPlayer Mini',
-            desc: status.dfplayer ? 'Ready' : 'Error',
+            desc: status.dfplayer_connected ? 'Ready' : 'Error',
             icon: 'bi-music-note-beamed',
-            color: status.dfplayer ? 'icon-success' : 'icon-danger',
-            badge: status.dfplayer ? 'success' : 'error',
+            color: status.dfplayer_connected ? 'icon-success' : 'icon-danger',
+            badge: status.dfplayer_connected ? 'success' : 'error',
         },
         {
             title: 'RTC DS3231',
-            desc: status.rtc_ok ? 'Sync OK' : 'Error',
+            desc: status.current_time ? `Sync ${status.current_time}` : 'Error',
             icon: 'bi-clock',
-            color: status.rtc_ok ? 'icon-primary' : 'icon-danger',
-            badge: status.rtc_ok ? 'success' : 'error',
+            color: status.current_time ? 'icon-primary' : 'icon-danger',
+            badge: status.current_time ? 'success' : 'error',
         },
         {
             title: 'Relay 1',
-            desc: status.relay1 ? 'ON' : 'OFF',
+            desc: status.relay1_state ? 'ON' : 'OFF',
             icon: 'bi-toggle-on',
-            color: status.relay1 ? 'icon-primary' : 'icon-secondary',
-            badge: status.relay1 ? 'success' : 'warning',
+            color: status.relay1_state ? 'icon-primary' : 'icon-secondary',
+            badge: status.relay1_state ? 'success' : 'warning',
         },
         {
             title: 'Relay 2',
-            desc: status.relay2 ? 'ON' : 'OFF',
+            desc: status.relay2_state ? 'ON' : 'OFF',
             icon: 'bi-toggle-on',
-            color: status.relay2 ? 'icon-primary' : 'icon-secondary',
-            badge: status.relay2 ? 'success' : 'warning',
+            color: status.relay2_state ? 'icon-primary' : 'icon-secondary',
+            badge: status.relay2_state ? 'success' : 'warning',
         },
         {
             title: 'SD Card',
-            desc: status.sd_card ? 'Terpasang' : 'Tidak ada',
+            desc: status.dfplayer_connected ? 'Terpasang' : 'Tidak ada',
             icon: 'bi-sd-card',
-            color: status.sd_card ? 'icon-success' : 'icon-warning',
-            badge: status.sd_card ? 'success' : 'warning',
+            color: status.dfplayer_connected ? 'icon-success' : 'icon-warning',
+            badge: status.dfplayer_connected ? 'success' : 'warning',
         },
         {
             title: 'WiFi Signal',
-            desc: status.wifi_rssi ? `${status.wifi_rssi} dBm` : '--',
+            desc: (status.wifi_rssi !== undefined && status.wifi_rssi !== null) ? `${status.wifi_rssi} dBm` : '--',
             icon: 'bi-wifi',
-            color: status.wifi_rssi > -70 ? 'icon-primary' : 'icon-warning',
-            badge: status.wifi_rssi > -70 ? 'success' : 'warning',
+            color: (status.wifi_rssi !== undefined && status.wifi_rssi > -70) ? 'icon-primary' : 'icon-warning',
+            badge: (status.wifi_rssi !== undefined && status.wifi_rssi > -70) ? 'success' : 'warning',
         },
         {
-            title: 'Mode',
-            desc: status.mode || 'Automatic',
-            icon: 'bi-gear',
-            color: 'icon-secondary',
-            badge: 'success',
+            title: 'Sync Jadwal',
+            desc: (status.schedule_sync_status || 'pending') === 'synced' ? 'OK' : (status.schedule_sync_status || 'pending'),
+            icon: 'bi-calendar-check',
+            color: status.schedule_sync_status === 'synced' ? 'icon-success' : 'icon-warning',
+            badge: status.schedule_sync_status === 'synced' ? 'success' : 'warning',
         },
         {
             title: 'Bell Status',
@@ -302,8 +302,8 @@ function renderTimeline(events) {
             </div>
             <div class="timeline-content">
                 <div class="timeline-time">${formatDateTime(event.created_at)}</div>
-                <div class="timeline-activity">${event.schedule_name || 'Bel'} — ${event.schedule_time?.slice(0, 5) || '--:--'}</div>
-                <div class="timeline-desc">${event.audio_played || '-'} ${event.notes ? '· ' + event.notes : ''}</div>
+                <div class="timeline-activity">Bel — ${event.time?.slice(0, 5) || '--:--'}</div>
+                <div class="timeline-desc">Track ${event.track_number || '-'} ${event.message ? '· ' + event.message : ''}</div>
             </div>
         `;
         container.querySelector('.timeline').appendChild(item);

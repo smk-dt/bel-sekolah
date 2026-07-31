@@ -174,8 +174,8 @@ if (settingsDom.sysBtnReset) {
             // Clear all tables
             await sb.from('esp_config').delete().neq('id', 0);
             await sb.from('esp_status').delete().neq('id', 0);
-            await sb.from('bell_log').delete().neq('id', 0);
-            await sb.from('system_log').delete().neq('id', 0);
+            await sb.from('bell_history').delete().neq('id', 0);
+            await sb.from('system_logs').delete().neq('id', 0);
             
             // Send reset command
             await sb.from('esp_commands').insert([{
@@ -251,8 +251,8 @@ if (settingsDom.sbBtnTest) {
             const sb = window.initSupabase();
             if (!sb) throw new Error('Supabase client not initialized');
 
-            // Try a simple query
-            const { data, error } = await sb.from('_health_check').select('*').limit(1);
+            // Try a simple query pada tabel devices (validasi koneksi + RLS)
+            const { data, error } = await sb.from('devices').select('device_id').limit(1);
             
             if (error) throw error;
 
@@ -556,8 +556,8 @@ if (settingsDom.dangerClearLogs) {
         if (!sb) return;
 
         try {
-            await sb.from('bell_log').delete().neq('id', 0);
-            await sb.from('system_log').delete().neq('id', 0);
+            await sb.from('bell_history').delete().neq('id', 0);
+            await sb.from('system_logs').delete().neq('id', 0);
             App.showToast('Semua log dihapus', 'success');
         } catch (err) {
             App.showToast('Gagal menghapus log', 'error');
@@ -576,8 +576,8 @@ if (settingsDom.dangerClearAll) {
 
         try {
             await sb.from('schedules').delete().neq('id', 0);
-            await sb.from('bell_log').delete().neq('id', 0);
-            await sb.from('system_log').delete().neq('id', 0);
+            await sb.from('bell_history').delete().neq('id', 0);
+            await sb.from('system_logs').delete().neq('id', 0);
             await sb.from('esp_config').delete().neq('id', 0);
             await sb.from('esp_status').delete().neq('id', 0);
             await sb.from('esp_commands').delete().neq('id', 0);

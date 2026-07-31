@@ -25,6 +25,50 @@
 #define SUPABASE_ANON_KEY   "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im11cXRweXRvbW5ucG50cXFteG9nIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MzQ1NjM1MjcsImV4cCI6MjA1MDEzOTUyN30.JI8G0lrYGqfxO8FZbIfVnKdWeWl-sAeO-ncW_Tf4kqA"
 #define SUPABASE_SCHEMA     "rest/v1"
 
+// ===== Supabase Endpoints (REST + RPC) =====
+// Jadwal: fetch dari tabel schedules (device_id filter)
+#define SUPABASE_TABLE_SCHEDULES    SUPABASE_SCHEMA "/schedules"
+// Command: poll perintah pending via RPC get_pending_commands
+#define SUPABASE_RPC_COMMANDS       SUPABASE_SCHEMA "/rpc/get_pending_commands"
+// Heartbeat: update status via RPC heartbeat
+#define SUPABASE_RPC_HEARTBEAT      SUPABASE_SCHEMA "/rpc/heartbeat"
+// Command ACK: update status via RPC update_command_status
+#define SUPABASE_RPC_CMD_ACK        SUPABASE_SCHEMA "/rpc/update_command_status"
+// Bell event log via RPC log_bell_event
+#define SUPABASE_RPC_BELL_LOG       SUPABASE_SCHEMA "/rpc/log_bell_event"
+// System log via RPC log_system_event
+#define SUPABASE_RPC_SYS_LOG        SUPABASE_SCHEMA "/rpc/log_system_event"
+// Register device via RPC register_device
+#define SUPABASE_RPC_REGISTER       SUPABASE_SCHEMA "/rpc/register_device"
+
+// ===== Schedule Sync (Scheduler NVS Cache) =====
+// CATATAN: MAX_SCHEDULES didefinisikan sebagai static const int
+// di Scheduler (scheduler.h) = 100. Jangan definisikan macro dengan
+// nama yang sama di sini karena akan konflik dengan C++ member.
+#define SCHEDULE_SYNC_INTERVAL_MS   300000  // 5 menit auto-resync (fallback bila command sync gagal)
+#define NVS_KEY_SCHEDULES           "schedules"    // JSON array cache
+#define NVS_KEY_SCHEDULE_HASH       "sched_hash"   // hash jadwal (deteksi perubahan)
+#define NVS_KEY_LAST_SYNC           "last_sync"    // timestamp sync terakhir
+
+// ===== Remote Command Constants =====
+#define CMD_TEST_AUDIO          "test_audio"
+#define CMD_RELAY1_ON           "relay_1_on"
+#define CMD_RELAY1_OFF          "relay_1_off"
+#define CMD_RELAY2_ON           "relay_2_on"
+#define CMD_RELAY2_OFF          "relay_2_off"
+#define CMD_SYNC_SCHEDULE       "sync_schedule"
+#define CMD_RESTART             "restart"
+#define CMD_GET_STATUS          "get_status"
+#define CMD_STATUS_PENDING      "pending"
+#define CMD_STATUS_PROCESSING   "processing"
+#define CMD_STATUS_DONE         "done"
+#define CMD_STATUS_FAILED       "failed"
+
+// ===== Sync Status (dikirim ke heartbeat) =====
+#define SYNC_STATUS_PENDING     "pending"
+#define SYNC_STATUS_SYNCED      "synced"
+#define SYNC_STATUS_ERROR       "error"
+
 // ===== FreeRTOS Task Configuration =====
 #define TASK_WIFI_PRIORITY      2
 #define TASK_RTC_PRIORITY       2

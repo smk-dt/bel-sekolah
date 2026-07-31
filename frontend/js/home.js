@@ -16,6 +16,7 @@ const homeDom = {
     btnTestAudio: document.getElementById('btn-test-audio'),
     qaAudioLoading: document.getElementById('qa-audio-loading'),
     btnSyncRtc: document.getElementById('btn-sync-rtc'),
+    btnSyncSchedule: document.getElementById('btn-sync-schedule'),
     btnRefreshStatus: document.getElementById('btn-refresh-status'),
     btnRestartEsp: document.getElementById('btn-restart-esp'),
     relayButtons: document.querySelectorAll('.qa-relay'),
@@ -58,42 +59,41 @@ async function loadHomeData() {
             return;
         }
 
-        // Fetch next schedule
+        // Fetch semua jadwal aktif, filter by day dalam JS.
+        // audio_id = track DFPlayer (1-16), day_of_week = int[] (1=Senin ... 7=Minggu).
         const now = new Date();
-        const dayNames = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
-        const todayName = dayNames[now.getDay()];
+        const dayNum = now.getDay(); // 0=Minggu, 1=Senin ... 6=Sabtu
         const currentTime = now.toTimeString().slice(0, 5);
 
         const { data: schedules, error: schedError } = await sb
             .from('schedules')
             .select('*')
-            .eq('day', todayName)
-            .eq('status', 'active')
-            .gte('time', currentTime)
-            .order('time', { ascending: true })
-            .limit(1);
+            .eq('enabled', true)
+            .order('time', { ascending: true });
 
         if (schedError) {
             console.error('[Home] Schedule fetch error:', schedError);
             renderFallbackNextBell();
-        } else if (schedules && schedules.length > 0) {
-            renderNextBell(schedules[0]);
-            startCountdown(schedules[0].time);
         } else {
-            // Check if any schedule passed for today
-            const { data: pastSchedules } = await sb
-                .from('schedules')
-                .select('*')
-                .eq('day', todayName)
-                .eq('status', 'active')
-                .lt('time', currentTime)
-                .order('time', { ascending: false })
-                .limit(1);
+            // Filter jadwal yang berlaku hari ini (mendukung array atau CSV lama)
+            const todaySchedules = (schedules || []).filter(s => {
+                if (dayNum < 1 || dayNum > 6) return false; // Minggu = libur
+                const days = Array.isArray(s.day_of_week)
+                    ? s.day_of_week
+                    : String(s.day_of_week || '').split(',').map(v => parseInt(v.trim())).filter(n => !isNaN(n));
+                return days.includes(dayNum);
+            });
 
-            if (pastSchedules && pastSchedules.length > 0) {
-                renderNextBellNone('Semua jadwal hari ini telah selesai');
+            const next = todaySchedules.find(s => s.time >= currentTime);
+
+            if (next) {
+                renderNextBell(next);
+                startCountdown(next.time);
             } else {
-                renderNextBellNone('Tidak ada jadwal untuk hari ini');
+                const hasPast = todaySchedules.some(s => s.time < currentTime);
+                renderNextBellNone(hasPast
+                    ? 'Semua jadwal hari ini telah selesai'
+                    : 'Tidak ada jadwal untuk hari ini');
             }
         }
 
@@ -130,24 +130,25 @@ async function fetchDeviceStatus(sb) {
 
         if (espStatus && espStatus.length > 0) {
             const status = espStatus[0];
-            App.updateEspStatus(status.status === 'online');
+            // Kolom esp_status.online adalah BOOLEAN
+            App.updateEspStatus(status.online === true);
             
             // Update relay status
-            if (status.relay1 !== undefined) {
-                devices[3].status = status.relay1 ? 'ok' : 'warning';
-                devices[3].desc = status.relay1 ? 'ON' : 'OFF';
+            if (status.relay1_state !== undefined) {
+                devices[3].status = status.relay1_state ? 'ok' : 'warning';
+                devices[3].desc = status.relay1_state ? 'ON' : 'OFF';
             }
-            if (status.relay2 !== undefined) {
-                devices[4].status = status.relay2 ? 'ok' : 'warning';
-                devices[4].desc = status.relay2 ? 'ON' : 'OFF';
+            if (status.relay2_state !== undefined) {
+                devices[4].status = status.relay2_state ? 'ok' : 'warning';
+                devices[4].desc = status.relay2_state ? 'ON' : 'OFF';
             }
             if (status.wifi_rssi !== undefined) {
                 devices[5].status = status.wifi_rssi > -70 ? 'ok' : 'warning';
                 devices[5].desc = `${status.wifi_rssi} dBm`;
             }
-            if (status.dfplayer_status !== undefined) {
-                devices[1].status = status.dfplayer_status ? 'ok' : 'error';
-                devices[1].desc = status.dfplayer_status ? 'Ready' : 'Error';
+            if (status.dfplayer_connected !== undefined) {
+                devices[1].status = status.dfplayer_connected ? 'ok' : 'error';
+                devices[1].desc = status.dfplayer_connected ? 'Ready' : 'Error';
             }
 
             // Enhanced status: ESP32 with uptime & free heap
@@ -165,43 +166,32 @@ async function fetchDeviceStatus(sb) {
                 devices[0].desc = desc || 'Online';
             }
 
-            // System state & CPU freq — update ESP32 status based on system_state
-            if (status.system_state !== undefined) {
-                const stateMap = {
-                    0: 'Init',
-                    1: 'WiFi...',
-                    2: 'Online',
-                    3: 'Sync...',
-                    4: 'Error',
-                    5: 'OTA',
+            // Schedule sync status — update ESP32 desc
+            if (status.schedule_sync_status !== undefined) {
+                const syncMap = {
+                    'pending': 'Booting',
+                    'synced': 'Jadwal OK',
+                    'error': 'Sync Error',
                 };
-                const stateStr = stateMap[status.system_state] || `State ${status.system_state}`;
-                // Append to existing desc or replace
-                if (devices[0].desc !== 'Online') {
-                    devices[0].desc += ` | ${stateStr}`;
-                } else {
-                    devices[0].desc = stateStr;
-                }
+                const syncStr = syncMap[status.schedule_sync_status] || status.schedule_sync_status;
+                devices[0].desc = devices[0].desc !== 'Online' ? `${devices[0].desc} | ${syncStr}` : syncStr;
             }
 
             // RTC time — update RTC DS3231 desc
-            if (status.rtc_time) {
-                devices[2].desc = status.rtc_time;
+            if (status.current_time) {
+                devices[2].desc = status.current_time;
             }
 
-            // Bell active — update visual indicator (render akan handle)
-            if (status.bell_active !== undefined) {
-                if (status.bell_active) {
-                    // Bell is ringing — we can show this in the hero section
-                    if (homeDom.heroSysStatus) {
-                        homeDom.heroSysStatus.textContent = 'Bel Berbunyi';
-                        homeDom.heroSysStatus.style.color = 'var(--danger)';
-                    }
-                } else {
-                    if (homeDom.heroSysStatus && homeDom.heroSysStatus.textContent === 'Bel Berbunyi') {
-                        homeDom.heroSysStatus.textContent = 'Aktif';
-                        homeDom.heroSysStatus.style.color = '';
-                    }
+            // Bell ringing — update visual indicator
+            if (status.bell_status === 'ringing') {
+                if (homeDom.heroSysStatus) {
+                    homeDom.heroSysStatus.textContent = 'Bel Berbunyi';
+                    homeDom.heroSysStatus.style.color = 'var(--danger)';
+                }
+            } else {
+                if (homeDom.heroSysStatus && homeDom.heroSysStatus.textContent === 'Bel Berbunyi') {
+                    homeDom.heroSysStatus.textContent = 'Aktif';
+                    homeDom.heroSysStatus.style.color = '';
                 }
             }
 
@@ -264,9 +254,16 @@ function renderFallbackDevices() {
 function renderNextBell(schedule) {
     if (!homeDom.nextbellTime) return;
 
+    // audio_id = track number DFPlayer (1-16), file 0001.mp3 - 0016.mp3
+    const audioName = `Bel (Track ${schedule.audio_id})`;
+    const trackNum = schedule.audio_id || 0;
+    const audioFile = trackNum
+        ? String(trackNum).padStart(4, '0') + '.mp3'
+        : 'default.mp3';
+
     homeDom.nextbellTime.textContent = schedule.time.slice(0, 5);
-    homeDom.nextbellName.textContent = schedule.name || 'Bel';
-    homeDom.nextbellAudio.innerHTML = `<i class="bi bi-file-music"></i><span>${schedule.audio || 'default.mp3'}</span>`;
+    homeDom.nextbellName.textContent = audioName;
+    homeDom.nextbellAudio.innerHTML = `<i class="bi bi-file-music"></i><span>${audioFile}</span>`;
     homeDom.nextbellStatusBadge.textContent = 'Menunggu';
     homeDom.nextbellStatusBadge.className = 'status-badge waiting';
     homeDom.heroSysStatus.textContent = 'Aktif';
@@ -348,10 +345,19 @@ async function sendCommandWithFeedback(command, label, timeoutMs = 10000) {
     }
 
     try {
+        // Get device_id (first registered device)
+        const { data: devices } = await sb.from('devices').select('device_id').limit(1);
+        const deviceId = devices?.[0]?.device_id;
+        if (!deviceId) {
+            App.showToast('Tidak ada perangkat terdaftar', 'warning');
+            return false;
+        }
+
         // Insert command
         const { data: insertData, error: insertError } = await sb
             .from('esp_commands')
             .insert([{
+                device_id: deviceId,
                 command: command,
                 status: 'pending',
                 created_at: new Date().toISOString()
@@ -468,6 +474,13 @@ if (homeDom.btnSyncRtc) {
     });
 }
 
+// Sync Schedule (fetch ulang jadwal dari server ke ESP)
+if (homeDom.btnSyncSchedule) {
+    homeDom.btnSyncSchedule.addEventListener('click', async function() {
+        await sendCommandWithFeedback('sync_schedule', 'Sync Jadwal', 15000);
+    });
+}
+
 // Refresh Status
 if (homeDom.btnRefreshStatus) {
     homeDom.btnRefreshStatus.addEventListener('click', function() {
@@ -485,7 +498,10 @@ if (homeDom.btnRestartEsp) {
         try {
             const sb = window.initSupabase();
             if (sb) {
+                const { data: devices } = await sb.from('devices').select('device_id').limit(1);
+                const deviceId = devices?.[0]?.device_id;
                 await sb.from('esp_commands').insert([{
+                    device_id: deviceId || null,
                     command: 'restart',
                     status: 'pending',
                     created_at: new Date().toISOString()

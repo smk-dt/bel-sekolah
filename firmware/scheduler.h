@@ -45,12 +45,20 @@ public:
     static void saveToNVS();
     static bool loadFromNVS();
     
+    // ===== NEW: Remote sync command & status =====
+    static bool syncFromServer();
+    static String getSyncTimestamp();
+    static String getSyncStatus();
+    
 private:
     static const int MAX_SCHEDULES = 100;
     static ScheduleEntry schedules[MAX_SCHEDULES];
     static int scheduleCount;
     static bool scheduleLoaded;
     static String lastScheduleJson;
+    static int lastTriggerDay;   // Reset alreadyTriggered saat hari berubah
+    static String lastSyncTimestamp; // Untuk heartbeat schedule_sync
+    static String syncStatus;    // "pending", "synced", "error"
     
     // Core logic
     static void checkSchedule();
@@ -58,9 +66,11 @@ private:
     static bool isDayMatch(const ScheduleEntry& entry);
     static void executeSchedule(const ScheduleEntry& entry);
     static int getTrackNumberFromAudioId(int audioId);
+    static void resetDailyTriggers(int currentDay);
     
     // Helper
     static String getCurrentDayStr();
+    static String buildSyncTimestamp();
 };
 
 #endif // SCHEDULER_H

@@ -182,6 +182,8 @@ bool SupabaseClient::sendEnhancedHeartbeat() {
     doc["p_relay2"] = g_sysStatus.relay2State;
     doc["p_bell_status"] = g_sysStatus.bellActive ? "ringing" : (g_sysStatus.testActive ? "test" : "standby");
     doc["p_schedules_count"] = g_sysStatus.schedulesCount;
+    doc["p_schedule_sync_at"] = Scheduler::getSyncTimestamp();
+    doc["p_schedule_sync_status"] = Scheduler::getSyncStatus();
     doc["p_firmware_version"] = FIRMWARE_VERSION;
     doc["p_rtc_temp"] = RTCManager::getTemperature();
     doc["p_dfplayer_connected"] = g_sysStatus.dfplayerConnected;
@@ -303,6 +305,11 @@ void SupabaseClient::processCommand(const String& command, long commandId) {
             resultMessage = "WiFi not connected, cannot sync RTC";
             success = false;
         }
+    }
+    else if (command == "sync_schedule") {
+        // Sinkronisasi jadwal paksa dari server
+        success = Scheduler::syncFromServer();
+        resultMessage = success ? "Schedule synced from server" : "Schedule sync failed";
     }
     else if (command == "restart") {
         // Send ACK first before restarting

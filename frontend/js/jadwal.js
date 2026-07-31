@@ -37,6 +37,31 @@ const DAY_MAP = { 'Senin': 1, 'Selasa': 2, 'Rabu': 3, 'Kamis': 4, 'Jumat': 5, 'S
 const ITEMS_PER_PAGE = 10;
 
 // ============================================
+// DAY-OF-WEEK HELPERS
+// Support both Postgres int[] ([1,2,3]) and legacy CSV string ("1,2,3")
+// ============================================
+function parseDayOfWeek(value) {
+    if (Array.isArray(value)) {
+        return value.map(v => parseInt(v)).filter(n => !isNaN(n));
+    }
+    return String(value || '')
+        .split(',')
+        .map(s => parseInt(s.trim()))
+        .filter(n => !isNaN(n));
+}
+
+function formatDayOfWeekForDisplay(value) {
+    return parseDayOfWeek(value)
+        .filter(n => n >= 1 && n <= 6)
+        .map(n => DAY_NAMES[n - 1])
+        .join(', ');
+}
+
+function formatDayOfWeekForSave(value) {
+    return parseDayOfWeek(value);
+}
+
+// ============================================
 // STATE
 // ============================================
 let activeDay = 'Senin';
@@ -102,10 +127,10 @@ async function loadScheduleData(day) {
             return;
         }
 
-        // Fetch schedules with join to audios table
+        // Fetch schedules (audio_id = track number DFPlayer 1-16, tanpa join tabel audios)
         const { data, error } = await sb
             .from('schedules')
-            .select('*, audios(name, track_number)')
+            .select('*')
             .order('time', { ascending: true });
 
         if (error) {
@@ -120,18 +145,20 @@ async function loadScheduleData(day) {
         }
 
         // Transform data to match frontend model
+        // audio_id = track number DFPlayer (1-16), file 0001.mp3 - 0016.mp3
         allSchedules = (data || []).map(item => ({
             id: item.id,
             day_of_week: item.day_of_week,
             time: item.time,
             audio_id: item.audio_id,
             enabled: item.enabled,
+            device_id: item.device_id,
             // Derived fields for display
-            audio_name: item.audios?.name || 'Audio',
-            track_number: item.audios?.track_number || 0,
+            audio_name: `Bel (Track ${item.audio_id})`,
+            track_number: item.audio_id,
             // Format audio file name from track number
-            audio_file: item.audios?.track_number 
-                ? String(item.audios.track_number).padStart(4, '0') + '.mp3' 
+            audio_file: item.audio_id
+                ? String(item.audio_id).padStart(4, '0') + '.mp3'
                 : '-',
         }));
 
@@ -159,7 +186,7 @@ function applyFilters() {
         // Day filter using day_of_week (contains day number)
         if (activeDay && activeDay !== 'all') {
             const dayNum = DAY_MAP[activeDay];
-            const days = (item.day_of_week || '').split(',').map(s => parseInt(s.trim()));
+            const days = parseDayOfWeek(item.day_of_week);
             if (!days.includes(dayNum)) return false;
         }
         
@@ -177,7 +204,7 @@ function applyFilters() {
             const time = (item.time || '').includes(search);
             const dayMatch = DAY_NAMES.some(d => {
                 const dn = DAY_MAP[d];
-                return (item.day_of_week || '').split(',').map(s => parseInt(s.trim())).includes(dn) && d.toLowerCase().includes(search);
+                return parseDayOfWeek(item.day_of_week).includes(dn) && d.toLowerCase().includes(search);
             });
             if (!audioName.includes(search) && !audioFile.includes(search) && !time && !dayMatch) return false;
         }
@@ -216,13 +243,8 @@ function renderTable(items) {
     container.innerHTML = '';
     
     items.forEach((item, index) => {
-        // Compute day names from day_of_week
-        const dayNames = (item.day_of_week || '')
-            .split(',')
-            .map(s => parseInt(s.trim()))
-            .filter(n => n >= 1 && n <= 6)
-            .map(n => DAY_NAMES[n - 1])
-            .join(', ');
+        // Compute day names from day_of_week (array or CSV string)
+        const dayNames = formatDayOfWeekForDisplay(item.day_of_week);
 
         const tr = document.createElement('tr');
         tr.style.animation = `fadeSlideUp 0.3s ease ${index * 0.03}s both`;
@@ -358,7 +380,7 @@ function editSchedule(id) {
     jadwalDom.inputId.value = schedule.id;
     jadwalDom.inputTime.value = schedule.time?.slice(0, 5) || '';
     jadwalDom.inputName.value = schedule.audio_name || '';
-    jadwalDom.inputDay.value = schedule.day_of_week || '1,2,3,4,5';
+    jadwalDom.inputDay.value = parseDayOfWeek(schedule.day_of_week).join(',') || '1,2,3,4,5';
     jadwalDom.inputAudio.value = schedule.track_number || 1;
     jadwalDom.inputStatus.value = schedule.enabled ? 'active' : 'inactive';
     jadwalDom.formSchedule.dataset.mode = 'edit';
@@ -437,9 +459,10 @@ async function handleSaveSchedule(e) {
     const enabled = jadwalDom.inputStatus.value === 'active';
 
     // Build data matching database schema
+    // day_of_week disimpan sebagai int[] (Postgres array)
     const data = {
         audio_id: audioId,
-        day_of_week: jadwalDom.inputDay.value,
+        day_of_week: formatDayOfWeekForSave(jadwalDom.inputDay.value),
         time: jadwalDom.inputTime.value,
         enabled: enabled,
     };

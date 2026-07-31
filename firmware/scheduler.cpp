@@ -2,11 +2,16 @@
 // SMART SCHOOL BELL IoT - Schedule Scheduler Implementation
 // ============================================
 #include "scheduler.h"
+#include "supabase.h"
+#include "dfplayer.h"
 
 ScheduleEntry Scheduler::schedules[MAX_SCHEDULES];
 int Scheduler::scheduleCount = 0;
 bool Scheduler::scheduleLoaded = false;
 String Scheduler::lastScheduleJson = "";
+int Scheduler::lastTriggerDay = -1;
+String Scheduler::lastSyncTimestamp = "";
+String Scheduler::syncStatus = SYNC_STATUS_PENDING;
 
 void Scheduler::begin() {
     LOG_INFO("SCHED", "Scheduler initialized");
@@ -14,6 +19,11 @@ void Scheduler::begin() {
     // Try to load schedule from NVS (Preferences)
     if (loadFromNVS()) {
         LOG_INFO("SCHED", "Schedule restored from NVS: " + String(scheduleCount) + " entries");
+        lastTriggerDay = RTCManager::getDayOfWeek(); // Jangan trigger jadwal lama setelah reboot
+        // Reset semua flag alreadyTriggered agar bisa dijadwalkan lagi hari ini
+        for (int i = 0; i < scheduleCount; i++) {
+            schedules[i].alreadyTriggered = false;
+        }
     } else {
         LOG_INFO("SCHED", "No saved schedule in NVS");
     }
@@ -39,12 +49,14 @@ void Scheduler::updateSchedule(const String& jsonResponse) {
     clearSchedule();
     
     // Parse JSON using ArduinoJson
-    // Expected format: [{"id":1,"audio_id":1,"day_of_week":"1,2,3,4,5","time":"07:00","audios":{"track_number":1}}, ...]
+    // Expected format (get_today_schedule RPC):
+    //   [{"id":1,"audio_id":1,"day_of_week":[1,2,3,4,5],"time":"07:00","enabled":true}, ...]
     DynamicJsonDocument doc(16384);
     DeserializationError error = deserializeJson(doc, jsonResponse);
     
     if (error) {
         LOG_ERROR("SCHED", "JSON parse error: " + String(error.c_str()));
+        syncStatus = SYNC_STATUS_ERROR;
         return;
     }
     
@@ -56,23 +68,28 @@ void Scheduler::updateSchedule(const String& jsonResponse) {
         
         int id = obj["id"] | 0;
         int audioId = obj["audio_id"] | 0;
-        const char* dayStr = obj["day_of_week"] | "";
         const char* timeStr = obj["time"] | "";
         bool enabled = obj["enabled"] | true;
         
-        // Get track number from nested audios object
-        int trackNumber = 1; // Default
-        if (obj.containsKey("audios")) {
-            JsonObject audio = obj["audios"];
-            trackNumber = audio["track_number"] | 1;
+        // day_of_week sekarang berupa array JSON: [1,2,3,4,5]
+        // Konversi ke CSV string "1,2,3,4,5" agar cocok dengan isDayMatch()
+        String dayCsv = "";
+        if (obj["day_of_week"].is<JsonArray>()) {
+            JsonArray days = obj["day_of_week"].as<JsonArray>();
+            bool first = true;
+            for (JsonVariant d : days) {
+                if (!first) dayCsv += ",";
+                dayCsv += String(d.as<int>());
+                first = false;
+            }
         }
         
-        if (id > 0 && strlen(dayStr) > 0 && strlen(timeStr) > 0) {
+        if (id > 0 && dayCsv.length() > 0 && strlen(timeStr) > 0) {
             schedules[count].id = id;
             schedules[count].audioId = audioId;
-            schedules[count].dayOfWeek = String(dayStr);
+            schedules[count].dayOfWeek = dayCsv;
             schedules[count].timeStr = String(timeStr);
-            schedules[count].trackNumber = trackNumber;
+            schedules[count].trackNumber = audioId; // audio_id = track number DFPlayer (1-16)
             schedules[count].enabled = enabled;
             schedules[count].alreadyTriggered = false;
             count++;
@@ -82,6 +99,9 @@ void Scheduler::updateSchedule(const String& jsonResponse) {
     scheduleCount = count;
     scheduleLoaded = (count > 0);
     lastScheduleJson = jsonResponse;
+    lastTriggerDay = RTCManager::getDayOfWeek();
+    syncStatus = SYNC_STATUS_SYNCED;
+    lastSyncTimestamp = buildSyncTimestamp();
     
     LOG_INFO("SCHED", "Loaded " + String(count) + " schedule entries");
 
@@ -114,6 +134,12 @@ bool Scheduler::hasActiveSchedule() {
 void Scheduler::checkSchedule() {
     if (!scheduleLoaded || scheduleCount == 0) return;
     
+    // Reset alreadyTriggered saat hari berganti
+    int currentDay = RTCManager::getDayOfWeek();
+    if (currentDay != lastTriggerDay) {
+        resetDailyTriggers(currentDay);
+    }
+    
     // Current time from RTC
     int currentHour = RTCManager::getHour();
     int currentMinute = RTCManager::getMinute();
@@ -138,6 +164,14 @@ void Scheduler::checkSchedule() {
             break; // Only execute one schedule per check
         }
     }
+}
+
+void Scheduler::resetDailyTriggers(int currentDay) {
+    LOG_DEBUG("SCHED", "Day changed to " + String(currentDay) + ", resetting triggers");
+    for (int i = 0; i < scheduleCount; i++) {
+        schedules[i].alreadyTriggered = false;
+    }
+    lastTriggerDay = currentDay;
 }
 
 bool Scheduler::isTimeMatch(const ScheduleEntry& entry) {
@@ -203,6 +237,12 @@ void Scheduler::executeSchedule(const ScheduleEntry& entry) {
     
     // Start relay sequence
     RelayManager::startBellSequence(entry.trackNumber);
+    
+    // Log ke bell_history di Supabase (best effort)
+    String nowTime = RTCManager::getTimeString();
+    if (nowTime.length() == 0) nowTime = entry.timeStr;
+    SupabaseClient::sendBellHistory(entry.id, nowTime, entry.trackNumber,
+        "success", "Scheduled bell fired");
 }
 
 String Scheduler::getCurrentDayStr() {
@@ -286,4 +326,46 @@ void Scheduler::triggerSchedule(int scheduleId) {
         }
     }
     LOG_WARN("SCHED", "Schedule ID=" + String(scheduleId) + " not found");
+}
+
+// ============================================
+// REMOTE SYNC COMMAND & STATUS
+// ============================================
+bool Scheduler::syncFromServer() {
+    syncStatus = SYNC_STATUS_PENDING;
+    LOG_INFO("SCHED", "Manual sync requested via command");
+
+    if (SupabaseClient::fetchSchedule()) {
+        // updateSchedule() akan set syncStatus = SYNC_STATUS_SYNCED + timestamp
+        return getSyncStatus() == SYNC_STATUS_SYNCED;
+    }
+
+    syncStatus = SYNC_STATUS_ERROR;
+    return false;
+}
+
+String Scheduler::getSyncTimestamp() {
+    return lastSyncTimestamp;
+}
+
+String Scheduler::getSyncStatus() {
+    return syncStatus;
+}
+
+String Scheduler::buildSyncTimestamp() {
+    // Format: YYYY-MM-DD HH:MM:SS (dari RTC)
+    // Gunakan getNow() (API yang tersedia) + method DateTime (RTClib)
+    DateTime now = RTCManager::getNow();
+    String ts = String(now.year()) + "-";
+    if (now.month() < 10) ts += "0";
+    ts += String(now.month()) + "-";
+    if (now.day() < 10) ts += "0";
+    ts += String(now.day()) + " ";
+    if (now.hour() < 10) ts += "0";
+    ts += String(now.hour()) + ":";
+    if (now.minute() < 10) ts += "0";
+    ts += String(now.minute()) + ":";
+    if (now.second() < 10) ts += "0";
+    ts += String(now.second());
+    return ts;
 }

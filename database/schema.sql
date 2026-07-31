@@ -5,24 +5,18 @@
 -- ===== 1. TABEL UTAMA (existing) =====
 
 -- Tabel schedules: menyimpan jadwal bel
+-- audio_id = track number DFPlayer (1-16), file 0001.mp3 - 0016.mp3 di SD Card
+-- day_of_week = array hari (1=Senin ... 7=Minggu)
+-- time = format TEXT 'HH:MM' (konsisten dengan firmware)
 CREATE TABLE IF NOT EXISTS schedules (
     id BIGSERIAL PRIMARY KEY,
-    audio_id BIGINT REFERENCES audios(id) ON DELETE CASCADE,
-    day_of_week TEXT NOT NULL DEFAULT '1,2,3,4,5',
-    time TIME NOT NULL,
+    device_id TEXT NOT NULL DEFAULT 'bel-smpn1-01',
+    audio_id INTEGER NOT NULL DEFAULT 1,
+    day_of_week INTEGER[] NOT NULL DEFAULT ARRAY[1,2,3,4,5],
+    time TEXT NOT NULL DEFAULT '07:00',
     enabled BOOLEAN NOT NULL DEFAULT true,
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
-);
-
--- Tabel audios: menyimpan daftar file audio
-CREATE TABLE IF NOT EXISTS audios (
-    id BIGSERIAL PRIMARY KEY,
-    name TEXT NOT NULL,
-    track_number INTEGER NOT NULL DEFAULT 1,
-    description TEXT,
-    duration_seconds INTEGER DEFAULT 0,
-    created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
 -- Tabel devices: registrasi perangkat ESP32
@@ -56,6 +50,9 @@ CREATE TABLE IF NOT EXISTS esp_status (
     firmware_version TEXT DEFAULT '',
     rtc_temperature REAL DEFAULT 0,
     dfplayer_connected BOOLEAN DEFAULT false,
+    schedule_sync_status TEXT DEFAULT 'pending',  -- 'pending', 'synced', 'error'
+    last_bell_time TIMESTAMPTZ,
+    last_schedule_sync TIMESTAMPTZ,
     last_heartbeat_at TIMESTAMPTZ DEFAULT NOW(),
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
@@ -79,10 +76,12 @@ CREATE TRIGGER trg_esp_status_updated_at
 -- 2b. esp_commands: Perintah remote untuk ESP32
 CREATE TABLE IF NOT EXISTS esp_commands (
     id BIGSERIAL PRIMARY KEY,
-    device_id TEXT DEFAULT 'bel-smpn1-01',
-    command TEXT NOT NULL,             -- 'test_audio', 'relay_1_on', 'relay_1_off', etc.
-    status TEXT DEFAULT 'pending',     -- 'pending', 'done', 'failed'
+    device_id TEXT NOT NULL,
+    command TEXT NOT NULL,             -- 'test_audio', 'relay_1_on', 'relay_1_off', 'sync_schedule', etc.
+    status TEXT DEFAULT 'pending',     -- 'pending', 'processing', 'done', 'failed', 'timeout'
+    params JSONB,
     acked_at TIMESTAMPTZ,
+    executed_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
@@ -138,19 +137,24 @@ CREATE OR REPLACE FUNCTION heartbeat(
     p_schedules_count INTEGER,
     p_firmware_version TEXT,
     p_rtc_temp REAL,
-    p_dfplayer_connected BOOLEAN
+    p_dfplayer_connected BOOLEAN,
+    p_schedule_sync_status TEXT DEFAULT 'pending',
+    p_last_bell_time TIMESTAMPTZ DEFAULT NULL,
+    p_last_schedule_sync TIMESTAMPTZ DEFAULT NULL
 ) RETURNS void AS $$
 BEGIN
     INSERT INTO esp_status (
         device_id, online, ip_address, wifi_rssi, uptime_seconds,
         free_heap, current_time, relay1_state, relay2_state,
         bell_status, schedules_count, firmware_version,
-        rtc_temperature, dfplayer_connected, last_heartbeat_at
+        rtc_temperature, dfplayer_connected, last_heartbeat_at,
+        schedule_sync_status, last_bell_time, last_schedule_sync
     ) VALUES (
         p_device_id, p_online, p_ip_address, p_wifi_rssi, p_uptime,
         p_free_heap, p_current_time, p_relay1, p_relay2,
         p_bell_status, p_schedules_count, p_firmware_version,
-        p_rtc_temp, p_dfplayer_connected, NOW()
+        p_rtc_temp, p_dfplayer_connected, NOW(),
+        p_schedule_sync_status, p_last_bell_time, p_last_schedule_sync
     )
     ON CONFLICT (device_id) DO UPDATE SET
         online = EXCLUDED.online,
@@ -166,7 +170,10 @@ BEGIN
         firmware_version = EXCLUDED.firmware_version,
         rtc_temperature = EXCLUDED.rtc_temperature,
         dfplayer_connected = EXCLUDED.dfplayer_connected,
-        last_heartbeat_at = NOW();
+        last_heartbeat_at = NOW(),
+        schedule_sync_status = EXCLUDED.schedule_sync_status,
+        last_bell_time = EXCLUDED.last_bell_time,
+        last_schedule_sync = EXCLUDED.last_schedule_sync;
 END;
 $$ LANGUAGE plpgsql;
 
@@ -197,7 +204,8 @@ CREATE OR REPLACE FUNCTION update_command_status(
 BEGIN
     UPDATE esp_commands
     SET status = p_status,
-        acked_at = CASE WHEN p_status IN ('done', 'failed') THEN NOW() ELSE acked_at END
+        acked_at = CASE WHEN p_status IN ('done', 'failed') THEN NOW() ELSE acked_at END,
+        executed_at = CASE WHEN p_status IN ('done', 'failed') THEN NOW() ELSE executed_at END
     WHERE id = p_command_id;
 END;
 $$ LANGUAGE plpgsql;
@@ -230,21 +238,21 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
--- 3f. Get today's schedule (existing, enhanced)
-CREATE OR REPLACE FUNCTION get_today_schedule()
-RETURNS TABLE(
+-- 3f. Get today's schedule (untuk device tertentu)
+CREATE OR REPLACE FUNCTION get_today_schedule(
+    p_device_id TEXT DEFAULT 'bel-smpn1-01'
+) RETURNS TABLE(
     id BIGINT,
-    audio_id BIGINT,
-    day_of_week TEXT,
-    time TIME,
-    enabled BOOLEAN,
-    track_number INTEGER
+    audio_id INTEGER,
+    day_of_week INTEGER[],
+    time TEXT,
+    enabled BOOLEAN
 ) AS $$
 DECLARE
     today_dow INTEGER;
 BEGIN
-    today_dow := EXTRACT(DOW FROM NOW() AT TIME ZONE 'Asia/Jakarta');
-    IF today_dow = 0 THEN today_dow := 7; END IF; -- Convert Sunday from 0 to 7
+    -- ISODOW: 1=Senin, 2=Selasa, ... 7=Minggu (sesuai format INTEGER[])
+    today_dow := EXTRACT(ISODOW FROM NOW() AT TIME ZONE 'Asia/Jakarta');
 
     RETURN QUERY
     SELECT
@@ -252,12 +260,11 @@ BEGIN
         s.audio_id,
         s.day_of_week,
         s.time,
-        s.enabled,
-        a.track_number
+        s.enabled
     FROM schedules s
-    LEFT JOIN audios a ON a.id = s.audio_id
     WHERE s.enabled = true
-      AND s.day_of_week LIKE '%' || today_dow || '%'
+      AND s.device_id = p_device_id
+      AND today_dow = ANY(s.day_of_week)
     ORDER BY s.time ASC;
 END;
 $$ LANGUAGE plpgsql;
@@ -303,6 +310,7 @@ $$ LANGUAGE plpgsql;
 -- ===== 4. ROW LEVEL SECURITY (optional, untuk Supabase anon key) =====
 
 -- Enable RLS on all tables
+ALTER TABLE schedules ENABLE ROW LEVEL SECURITY;
 ALTER TABLE esp_status ENABLE ROW LEVEL SECURITY;
 ALTER TABLE esp_commands ENABLE ROW LEVEL SECURITY;
 ALTER TABLE bell_history ENABLE ROW LEVEL SECURITY;
@@ -324,26 +332,118 @@ INSERT INTO devices (device_id, name, location, firmware_version)
 VALUES ('bel-smpn1-01', 'BEL Otomatis SMPN 1', 'Ruang Guru', '2.0.0')
 ON CONFLICT (device_id) DO NOTHING;
 
--- Insert sample audios
-INSERT INTO audios (name, track_number, description, duration_seconds) VALUES
-    ('Bel Masuk Pagi', 1, 'Bel tanda masuk pagi', 30),
-    ('Bel Istirahat', 2, 'Bel tanda istirahat', 20),
-    ('Bel Masuk Siang', 3, 'Bel tanda masuk siang', 20),
-    ('Bel Pulang', 4, 'Bel tanda pulang', 30),
-    ('Lagu Indonesia Raya', 5, 'Lagu wajib nasional', 60),
-    ('Doa Pagi', 6, 'Doa sebelum belajar', 45),
-    ('Informasi', 7, 'Pengumuman informasi', 30),
-    ('Test', 8, 'Audio untuk testing', 15)
+-- Catatan: tidak ada tabel audios.
+-- Audio berupa file 0001.mp3 - 0016.mp3 di SD Card DFPlayer.
+-- Kolom schedules.audio_id = nomor track (1-16).
+
+-- Insert sample schedules (Senin-Jumat, device bel-smpn1-01)
+INSERT INTO schedules (device_id, audio_id, day_of_week, time, enabled) VALUES
+    ('bel-smpn1-01', 1, ARRAY[1,2,3,4,5], '07:00', true),   -- Bel Masuk Pagi
+    ('bel-smpn1-01', 6, ARRAY[1,2,3,4,5], '07:05', true),   -- Doa Pagi
+    ('bel-smpn1-01', 5, ARRAY[1,2,3,4,5], '07:10', true),   -- Indonesia Raya
+    ('bel-smpn1-01', 2, ARRAY[1,2,3,4,5], '10:00', true),   -- Istirahat 1
+    ('bel-smpn1-01', 3, ARRAY[1,2,3,4,5], '10:30', true),   -- Masuk Siang
+    ('bel-smpn1-01', 2, ARRAY[1,2,3,4,5], '12:00', true),   -- Istirahat 2
+    ('bel-smpn1-01', 3, ARRAY[1,2,3,4,5], '12:45', true),   -- Masuk Siang 2
+    ('bel-smpn1-01', 4, ARRAY[1,2,3,4,5], '15:00', true)    -- Pulang
 ON CONFLICT DO NOTHING;
 
--- Insert sample schedules (Senin-Jumat)
-INSERT INTO schedules (audio_id, day_of_week, time, enabled) VALUES
-    (1, '1,2,3,4,5', '07:00', true),   -- Bel Masuk Pagi
-    (6, '1,2,3,4,5', '07:05', true),   -- Doa Pagi
-    (5, '1,2,3,4,5', '07:10', true),   -- Indonesia Raya
-    (2, '1,2,3,4,5', '10:00', true),   -- Istirahat 1
-    (3, '1,2,3,4,5', '10:30', true),   -- Masuk Siang
-    (2, '1,2,3,4,5', '12:00', true),   -- Istirahat 2
-    (3, '1,2,3,4,5', '12:45', true),   -- Masuk Siang 2
-    (4, '1,2,3,4,5', '15:00', true)    -- Pulang
-ON CONFLICT DO NOTHING;
+-- ============================================
+-- 2e. device_metadata: konfigurasi perangkat (key-value)
+-- ============================================
+CREATE TABLE IF NOT EXISTS device_metadata (
+    id BIGSERIAL PRIMARY KEY,
+    device_id TEXT NOT NULL REFERENCES devices(device_id) ON DELETE CASCADE,
+    key TEXT NOT NULL,
+    value TEXT NOT NULL DEFAULT '',
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE(device_id, key)
+);
+ALTER TABLE device_metadata ENABLE ROW LEVEL SECURITY;
+
+-- ============================================
+-- 2f. esp_config: pengaturan perangkat (1 baris per device)
+-- ============================================
+CREATE TABLE IF NOT EXISTS esp_config (
+    id BIGSERIAL PRIMARY KEY,
+    device_id TEXT NOT NULL DEFAULT 'bel-smpn1-01',
+    device_name TEXT DEFAULT 'School Bell',
+    fw_version TEXT DEFAULT 'v1.0.0',
+    wifi_ssid TEXT DEFAULT '',
+    wifi_password TEXT DEFAULT '',
+    sync_interval INTEGER DEFAULT 60,
+    supabase_url TEXT DEFAULT '',
+    supabase_key TEXT DEFAULT '',
+    schedule_auto_sync BOOLEAN DEFAULT true,
+    relay_on_bell BOOLEAN DEFAULT false,
+    relay_duration INTEGER DEFAULT 5,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE(device_id)
+);
+ALTER TABLE esp_config ENABLE ROW LEVEL SECURITY;
+
+-- ============================================
+-- 2g. audio_library: file audio terupload (referensi)
+-- ============================================
+CREATE TABLE IF NOT EXISTS audio_library (
+    id BIGSERIAL PRIMARY KEY,
+    filename TEXT DEFAULT '',
+    name TEXT DEFAULT '',
+    url TEXT DEFAULT '',
+    size BIGINT DEFAULT 0,
+    type TEXT DEFAULT '',
+    duration INTEGER DEFAULT 0,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+ALTER TABLE audio_library ENABLE ROW LEVEL SECURITY;
+
+-- ============================================
+-- 2h. app_settings: pengaturan aplikasi (key-value)
+-- ============================================
+CREATE TABLE IF NOT EXISTS app_settings (
+    id BIGSERIAL PRIMARY KEY,
+    key TEXT UNIQUE NOT NULL,
+    value TEXT DEFAULT '',
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+ALTER TABLE app_settings ENABLE ROW LEVEL SECURITY;
+
+-- ============================================
+-- Trigger updated_at untuk esp_config & app_settings
+-- ============================================
+CREATE OR REPLACE FUNCTION update_updated_at_column()
+RETURNS TRIGGER AS $$
+BEGIN
+    NEW.updated_at = NOW();
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trg_esp_config_updated_at ON esp_config;
+CREATE TRIGGER trg_esp_config_updated_at
+    BEFORE UPDATE ON esp_config
+    FOR EACH ROW
+    EXECUTE FUNCTION update_updated_at_column();
+
+DROP TRIGGER IF EXISTS trg_app_settings_updated_at ON app_settings;
+CREATE TRIGGER trg_app_settings_updated_at
+    BEFORE UPDATE ON app_settings
+    FOR EACH ROW
+    EXECUTE FUNCTION update_updated_at_column();
+
+-- ============================================
+-- 6. REALTIME PUBLICATION
+-- ============================================
+
+-- Sertakan tabel schedules untuk update realtime di dashboard
+ALTER PUBLICATION supabase_realtime ADD TABLE schedules;
+
+-- ============================================
+-- 7. INDEXES
+-- ============================================
+
+-- Index pencarian jadwal per device
+CREATE INDEX IF NOT EXISTS idx_schedules_device_id ON schedules(device_id);

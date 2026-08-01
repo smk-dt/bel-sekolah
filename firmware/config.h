@@ -21,8 +21,8 @@
 #define WIFI_PASSWORD_DEFAULT   "123456789"
 
 // ===== Supabase Configuration =====
-#define SUPABASE_URL        "https://muqtpytomnnpntqqmxog.supabase.co"
-#define SUPABASE_ANON_KEY   "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im11cXRweXRvbW5ucG50cXFteG9nIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MzQ1NjM1MjcsImV4cCI6MjA1MDEzOTUyN30.JI8G0lrYGqfxO8FZbIfVnKdWeWl-sAeO-ncW_Tf4kqA"
+#define SUPABASE_URL        "https://ratkhbsmtfvuvngavqdk.supabase.co"
+#define SUPABASE_ANON_KEY   "sb_publishable_2HKYCCcJ2xMgwndad5yUMA_mkdZb3_t"
 #define SUPABASE_SCHEMA     "rest/v1"
 
 // ===== Supabase Endpoints (REST + RPC) =====

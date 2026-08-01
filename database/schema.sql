@@ -13,7 +13,7 @@ CREATE TABLE IF NOT EXISTS schedules (
     device_id TEXT NOT NULL DEFAULT 'bel-smpn1-01',
     audio_id INTEGER NOT NULL DEFAULT 1,
     day_of_week INTEGER[] NOT NULL DEFAULT ARRAY[1,2,3,4,5],
-    time TEXT NOT NULL DEFAULT '07:00',
+    "time" TEXT NOT NULL DEFAULT '07:00',
     enabled BOOLEAN NOT NULL DEFAULT true,
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
@@ -42,7 +42,7 @@ CREATE TABLE IF NOT EXISTS esp_status (
     wifi_rssi INTEGER DEFAULT 0,
     uptime_seconds BIGINT DEFAULT 0,
     free_heap INTEGER DEFAULT 0,
-    current_time TEXT DEFAULT '--:--:--',
+    "current_time" TEXT DEFAULT '--:--:--',
     relay1_state BOOLEAN DEFAULT false,
     relay2_state BOOLEAN DEFAULT false,
     bell_status TEXT DEFAULT 'standby',  -- 'standby', 'ringing', 'test'
@@ -95,7 +95,7 @@ CREATE TABLE IF NOT EXISTS bell_history (
     id BIGSERIAL PRIMARY KEY,
     device_id TEXT NOT NULL REFERENCES devices(device_id) ON DELETE CASCADE,
     schedule_id BIGINT REFERENCES schedules(id) ON DELETE SET NULL,
-    time TEXT NOT NULL,
+    "time" TEXT NOT NULL,
     track_number INTEGER DEFAULT 0,
     status TEXT NOT NULL DEFAULT 'success',  -- 'success', 'failed', 'skipped'
     message TEXT DEFAULT '',
@@ -145,7 +145,7 @@ CREATE OR REPLACE FUNCTION heartbeat(
 BEGIN
     INSERT INTO esp_status (
         device_id, online, ip_address, wifi_rssi, uptime_seconds,
-        free_heap, current_time, relay1_state, relay2_state,
+        free_heap, "current_time", relay1_state, relay2_state,
         bell_status, schedules_count, firmware_version,
         rtc_temperature, dfplayer_connected, last_heartbeat_at,
         schedule_sync_status, last_bell_time, last_schedule_sync
@@ -162,7 +162,7 @@ BEGIN
         wifi_rssi = EXCLUDED.wifi_rssi,
         uptime_seconds = EXCLUDED.uptime_seconds,
         free_heap = EXCLUDED.free_heap,
-        current_time = EXCLUDED.current_time,
+        "current_time" = EXCLUDED."current_time",
         relay1_state = EXCLUDED.relay1_state,
         relay2_state = EXCLUDED.relay2_state,
         bell_status = EXCLUDED.bell_status,
@@ -220,7 +220,7 @@ CREATE OR REPLACE FUNCTION log_bell_event(
     p_message TEXT
 ) RETURNS void AS $$
 BEGIN
-    INSERT INTO bell_history (device_id, schedule_id, time, track_number, status, message)
+    INSERT INTO bell_history (device_id, schedule_id, "time", track_number, status, message)
     VALUES (p_device_id, p_schedule_id, p_time, p_track_number, p_status, p_message);
 END;
 $$ LANGUAGE plpgsql;
@@ -245,7 +245,7 @@ CREATE OR REPLACE FUNCTION get_today_schedule(
     id BIGINT,
     audio_id INTEGER,
     day_of_week INTEGER[],
-    time TEXT,
+    "time" TEXT,
     enabled BOOLEAN
 ) AS $$
 DECLARE
@@ -259,13 +259,13 @@ BEGIN
         s.id,
         s.audio_id,
         s.day_of_week,
-        s.time,
+        s."time",
         s.enabled
     FROM schedules s
     WHERE s.enabled = true
       AND s.device_id = p_device_id
       AND today_dow = ANY(s.day_of_week)
-    ORDER BY s.time ASC;
+    ORDER BY s."time" ASC;
 END;
 $$ LANGUAGE plpgsql;
 
@@ -337,7 +337,7 @@ ON CONFLICT (device_id) DO NOTHING;
 -- Kolom schedules.audio_id = nomor track (1-16).
 
 -- Insert sample schedules (Senin-Jumat, device bel-smpn1-01)
-INSERT INTO schedules (device_id, audio_id, day_of_week, time, enabled) VALUES
+INSERT INTO schedules (device_id, audio_id, day_of_week, "time", enabled) VALUES
     ('bel-smpn1-01', 1, ARRAY[1,2,3,4,5], '07:00', true),   -- Bel Masuk Pagi
     ('bel-smpn1-01', 6, ARRAY[1,2,3,4,5], '07:05', true),   -- Doa Pagi
     ('bel-smpn1-01', 5, ARRAY[1,2,3,4,5], '07:10', true),   -- Indonesia Raya

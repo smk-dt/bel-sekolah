@@ -182,7 +182,7 @@ bool SupabaseClient::sendEnhancedHeartbeat() {
     doc["p_relay2"] = g_sysStatus.relay2State;
     doc["p_bell_status"] = g_sysStatus.bellActive ? "ringing" : (g_sysStatus.testActive ? "test" : "standby");
     doc["p_schedules_count"] = g_sysStatus.schedulesCount;
-    doc["p_schedule_sync_at"] = Scheduler::getSyncTimestamp();
+    doc["p_last_schedule_sync"] = Scheduler::getSyncTimestamp();
     doc["p_schedule_sync_status"] = Scheduler::getSyncStatus();
     doc["p_firmware_version"] = FIRMWARE_VERSION;
     doc["p_rtc_temp"] = RTCManager::getTemperature();

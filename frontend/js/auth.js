@@ -221,4 +221,14 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         });
     }
+
+    // CRITICAL: Auto-initialize auth on page load
+    // This checks localStorage session and auto-logs in if session exists
+    console.log('[Auth] Auto-initializing auth...');
+    initAuth().catch(err => {
+        console.error('[Auth] Auto-init failed:', err);
+    });
+
+    // Listen for Supabase auth state changes
+    listenAuthChanges();
 });

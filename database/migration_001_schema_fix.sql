@@ -32,9 +32,10 @@ ALTER TABLE schedules ALTER COLUMN day_of_week TYPE INTEGER[]
     USING (string_to_array(regexp_replace(day_of_week, '\s', '', 'g'), ',')::INTEGER[]);
 ALTER TABLE schedules ALTER COLUMN day_of_week SET DEFAULT ARRAY[1,2,3,4,5]::INTEGER[];
 
--- 1d. time: TIME → TEXT (format 'HH:MM' konsisten dengan firmware)
-ALTER TABLE schedules ALTER COLUMN time TYPE TEXT USING TO_CHAR(time, 'HH24:MI');
-ALTER TABLE schedules ALTER COLUMN time SET DEFAULT '07:00';
+-- 1d. "time": TIME → TEXT (format 'HH:MM' konsisten dengan firmware)
+--     Reserved keyword "time" harus di-quote dengan double quotes
+ALTER TABLE schedules ALTER COLUMN "time" TYPE TEXT USING TO_CHAR("time", 'HH24:MI');
+ALTER TABLE schedules ALTER COLUMN "time" SET DEFAULT '07:00';
 
 -- ============================================
 -- 2. TAMBAH KOLOM DI ESP_STATUS
@@ -76,7 +77,7 @@ CREATE OR REPLACE FUNCTION heartbeat(
 BEGIN
     INSERT INTO esp_status (
         device_id, online, ip_address, wifi_rssi, uptime_seconds,
-        free_heap, current_time, relay1_state, relay2_state,
+        free_heap, "current_time", relay1_state, relay2_state,
         bell_status, schedules_count, firmware_version,
         rtc_temperature, dfplayer_connected, last_heartbeat_at,
         schedule_sync_status, last_bell_time, last_schedule_sync
@@ -93,7 +94,7 @@ BEGIN
         wifi_rssi = EXCLUDED.wifi_rssi,
         uptime_seconds = EXCLUDED.uptime_seconds,
         free_heap = EXCLUDED.free_heap,
-        current_time = EXCLUDED.current_time,
+        "current_time" = EXCLUDED."current_time",
         relay1_state = EXCLUDED.relay1_state,
         relay2_state = EXCLUDED.relay2_state,
         bell_status = EXCLUDED.bell_status,
@@ -122,7 +123,7 @@ CREATE OR REPLACE FUNCTION get_today_schedule(
     id BIGINT,
     audio_id INTEGER,
     day_of_week INTEGER[],
-    time TEXT,
+    "time" TEXT,
     enabled BOOLEAN
 ) AS $$
 DECLARE
@@ -136,13 +137,13 @@ BEGIN
         s.id,
         s.audio_id,
         s.day_of_week,
-        s.time,
+        s."time",
         s.enabled
     FROM schedules s
     WHERE s.enabled = true
       AND s.device_id = p_device_id
       AND today_dow = ANY(s.day_of_week)
-    ORDER BY s.time ASC;
+    ORDER BY s."time" ASC;
 END;
 $$ LANGUAGE plpgsql;
 

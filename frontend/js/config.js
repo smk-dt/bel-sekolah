@@ -8,11 +8,22 @@ const CONFIG = {
     API_BASE: '/api',
 };
 
-// Initialize Supabase client
+// Initialize Supabase client (singleton — only create once)
+let _supabaseClient = null;
+
 function initSupabase() {
-    if (window.supabase) {
-        return window.supabase.createClient(CONFIG.SUPABASE_URL, CONFIG.SUPABASE_ANON_KEY);
+    // Return existing client if available
+    if (_supabaseClient) {
+        return _supabaseClient;
     }
+    
+    // Create new client only once
+    if (window.supabase) {
+        _supabaseClient = window.supabase.createClient(CONFIG.SUPABASE_URL, CONFIG.SUPABASE_ANON_KEY);
+        console.log('[Config] Supabase client initialized');
+        return _supabaseClient;
+    }
+    
     console.error('[Config] Supabase SDK not loaded');
     return null;
 }

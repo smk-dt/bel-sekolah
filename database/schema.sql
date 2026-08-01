@@ -177,22 +177,24 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
--- 3b. Get pending commands for a device
+-- 3b. Get pending commands for a device (CTE avoids ambiguous column reference)
 CREATE OR REPLACE FUNCTION get_pending_commands(p_device_id TEXT)
 RETURNS TABLE(id BIGINT, command TEXT) AS $$
 BEGIN
     RETURN QUERY
-    UPDATE esp_commands
-    SET status = 'processing'
-    WHERE id IN (
-        SELECT id FROM esp_commands
-        WHERE device_id = p_device_id
-          AND status = 'pending'
-        ORDER BY id ASC
+    WITH pending AS (
+        SELECT ec.id
+        FROM esp_commands ec
+        WHERE ec.device_id = p_device_id
+          AND ec.status = 'pending'
+        ORDER BY ec.id ASC
         LIMIT 5
         FOR UPDATE SKIP LOCKED
     )
-    RETURNING id, command;
+    UPDATE esp_commands
+    SET status = 'processing'
+    WHERE esp_commands.id IN (SELECT pending.id FROM pending)
+    RETURNING esp_commands.id, esp_commands.command;
 END;
 $$ LANGUAGE plpgsql;
 

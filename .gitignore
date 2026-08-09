@@ -1,0 +1,78 @@
+# ============================================
+# Node.js
+# ============================================
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+package-lock.json
+.pnp.js
+
+# ============================================
+# Environment Variables
+# ============================================
+.env
+.env.local
+.env.production
+.env.example
+
+# ============================================
+# Build Output
+# ============================================
+dist/
+build/
+out/
+*.tsbuildinfo
+
+# ============================================
+# Arduino / ESP32
+# ============================================
+firmware/*/build/
+firmware/**/build/
+*.elf
+*.bin
+*.hex
+*.map
+
+# ============================================
+# Database (lokal)
+# ============================================
+*.db
+*.sqlite
+*.sqlite3
+*.db-journal
+
+# ============================================
+# Uploads / Storage sementara
+# ============================================
+server/storage/
+server/uploads/
+*.mp3
+
+# ============================================
+# Sistem / Editor
+# ============================================
+.DS_Store
+Thumbs.db
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.swp
+
+# ============================================
+# Logs
+# ============================================
+logs/
+*.log
+
+# ============================================
+# Arduino IDE
+# ============================================
+**/.arduino/
+arduino_output.txt
+temp-*.txt

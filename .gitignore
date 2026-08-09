@@ -5,8 +5,10 @@ node_modules/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
-package-lock.json
 .pnp.js
+
+# package-lock.json DI-COMMIT (best practice,
+# agar versi dependency konsisten antar developer)
 
 # ============================================
 # Environment Variables
@@ -14,7 +16,11 @@ package-lock.json
 .env
 .env.local
 .env.production
-.env.example
+
+# KECUALI: .env.example adalah template yang
+# WAJIB di-commit (tidak berisi secret)
+!.env.example
+!**/.env.example
 
 # ============================================
 # Build Output

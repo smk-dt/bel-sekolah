@@ -1,38 +1,55 @@
 # ============================================
+
 # Node.js
+
 # ============================================
+
 node_modules/
+**/node_modules/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 .pnp.js
 
 # package-lock.json DI-COMMIT (best practice,
+
 # agar versi dependency konsisten antar developer)
 
 # ============================================
+
 # Environment Variables
+
 # ============================================
+
 .env
 .env.local
 .env.production
 
 # KECUALI: .env.example adalah template yang
+
 # WAJIB di-commit (tidak berisi secret)
+
 !.env.example
 !**/.env.example
 
 # ============================================
+
 # Build Output
+
 # ============================================
+
 dist/
+**/dist/
 build/
 out/
 *.tsbuildinfo
 
 # ============================================
+
 # Arduino / ESP32
+
 # ============================================
+
 firmware/*/build/
 firmware/**/build/
 *.elf
@@ -41,23 +58,32 @@ firmware/**/build/
 *.map
 
 # ============================================
+
 # Database (lokal)
+
 # ============================================
+
 *.db
 *.sqlite
 *.sqlite3
 *.db-journal
 
 # ============================================
+
 # Uploads / Storage sementara
+
 # ============================================
+
 server/storage/
 server/uploads/
 *.mp3
 
 # ============================================
+
 # Sistem / Editor
+
 # ============================================
+
 .DS_Store
 Thumbs.db
 .vscode/*
@@ -71,14 +97,52 @@ Thumbs.db
 *.swp
 
 # ============================================
+
 # Logs
+
 # ============================================
+
 logs/
 *.log
 
 # ============================================
+
 # Arduino IDE
+
 # ============================================
+
 **/.arduino/
 arduino_output.txt
 temp-*.txt
+
+# ============================================
+
+# Local deployment / temporary files
+
+# ============================================
+
+cloudflared.exe
+test_tunnel.wav
+fix_script.py
+run_tunnel.ps1
+relay-server/
+
+# ============================================
+
+# Backup files
+
+# ============================================
+
+*.bak
+
+# ============================================
+
+# IDE metadata inside firmware
+
+# ============================================
+
+**/.theia/
+# ============================================
+# Supabase local temporary files
+# ============================================
+supabase/.temp/

@@ -1,0 +1,21 @@
+68385daf9dc010a12d8174caeac6aa28bdf5c2d4a0d6e5f7fdde664adf8c1fe1  54481  dashboard/src/App.jsx
+4c4764a964a2274758bba0f18e6e34277efeca6f5b9a45114fdf776a7d83b8a9    6114  dashboard/src/ptt-audio-worklet.js
+780f55a89ecc462f7077dce6c06da843086ad290b9d5232724481a1949dea8f6    5019  dashboard/src/ptt-ws-worker.js
+d6c596551be550713591b7506bc270659cbf80744ecc5a4fb75029ceed65e747   15576  audio-server/src/server.js
+3a833f6794bdb6a98bcf6d7ce5e4d740951e18e34dfeed713aec6651fc9a686d   10888  firmware/smart_school_bell/smart_school_bell.ino
+
+# ---------------------------------------------------------------------------
+# SMART SCHOOL BELL - BASELINE LOCK
+# Frozen 2026-09-30 | tag: smart-school-bell-local-stable
+# HEAD: 572b61be85bac485cdeee6e54594d3aecccb413f (master)
+# Format: <sha256>  <bytes>  <path relative to repo root>
+#
+# The tag does NOT cover untracked files (audio-server/, the two PTT frontend
+# files, the 32 firmware modules). This file is the authoritative record of
+# the frozen content.
+#
+# Re-verify (PowerShell):
+#   Get-FileHash -Algorithm SHA256 <path>
+# Re-verify (bash):
+#   sha256sum -c <(awk '{print $1"  "$3}' BASELINE_SHA256.txt)
+# ---------------------------------------------------------------------------

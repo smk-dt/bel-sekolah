@@ -94,9 +94,9 @@ create table if not exists public.schedules (
   id uuid primary key default gen_random_uuid(),
   device_id uuid not null references public.devices (id) on delete cascade,
   name text not null,
-  day text not null check (day in ('monday','tuesday','wednesday','thursday','friday','saturday','sunday')),
+  day smallint not null check (day >= 0 and day <= 7),
   time time not null,
-  audio_id uuid not null references public.audios (id) on delete restrict,
+  track smallint not null default 1,
   enabled boolean not null default true,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
@@ -176,6 +176,38 @@ create policy "logs_select_authenticated" on public.logs
 
 create policy "logs_insert_service" on public.logs
   for insert with check (true);
+
+-- ------------------- DEVICE COMMANDS ----------------------------
+-- Antrian perintah dari Dashboard ke ESP32 (Phase 11)
+-- ESP32 membaca command pending saat heartbeat, lalu mengeksekusi.
+-- ------------------- --------------------------------------------
+create table if not exists public.device_commands (
+  id uuid primary key default gen_random_uuid(),
+  device_id uuid not null references public.devices (id) on delete cascade,
+  command_type text not null,
+  payload jsonb default '{}',
+  status text not null default 'pending',
+  created_by uuid references auth.users (id),
+  created_at timestamptz not null default now(),
+  executed_at timestamptz
+);
+
+create index if not exists idx_device_commands_pending
+  on public.device_commands (device_id, created_at)
+  where status = 'pending';
+
+alter table public.device_commands enable row level security;
+
+-- Dashboard (authenticated) bisa baca + insert command
+create policy "device_commands_select_authenticated" on public.device_commands
+  for select to authenticated using (true);
+
+create policy "device_commands_insert_authenticated" on public.device_commands
+  for insert to authenticated with check (true);
+
+-- Service role (edge function) bisa update status command
+create policy "device_commands_update_service" on public.device_commands
+  for update using (true) with check (true);
 
 -- ------------------------------------------------------------
 -- SEED DATA - AUDIOS (Referensi file MP3 di MicroSD)

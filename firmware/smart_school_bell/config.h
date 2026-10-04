@@ -53,8 +53,8 @@ extern const char* DEVICE_TOKEN;
 #define RTC_VALID_YEAR_MIN           2025
 #define RTC_VALID_YEAR_MAX           2099
 #define RTC_UTC_OFFSET_HOURS         7
-#define PTT_WS_HOST                  "10.127.158.210"
-#define PTT_WS_PORT                  3000
+#define PTT_WS_HOST                  "smartbel.smkdata.sch.id"
+#define PTT_WS_PORT                  3088
 #define PTT_WS_PATH                  "/ptt"
 
 #endif

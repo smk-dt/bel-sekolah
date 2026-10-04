@@ -36,10 +36,10 @@ extern const char* DEVICE_TOKEN;
 #define LOOP_DELAY_MS                10UL
 #define BELL_RELAY1_DELAY_MS         3000UL
 #define BELL_AUDIO_START_TIMEOUT_MS  10000UL
-#define BELL_AUDIO_MAX_MS            30000UL
-#define BELL_TOTAL_TIMEOUT_MS        45000UL
+#define BELL_BUSY_END_CONFIRM_MS     300UL
 #define BELL_AUDIO_FALLBACK_MS       5000UL
 #define BELL_STOP_DELAY_MS           1000UL
+#define BELL_TOTAL_TIMEOUT_MS        315000UL
 #define SCHEDULE_MAX                 32
 #define SCHEDULE_CHECK_INTERVAL_MS   1000UL
 #define SCHEDULE_VERBOSE_DEBUG       0

@@ -640,6 +640,7 @@ function InfoRow({ icon, label, value }) {
 }
 function RelayControlCard({ device }) {
   const [sendingKey, setSendingKey] = useState(null);
+  const [relayError, setRelayError] = useState(null);
   const lastSeenMs = device?.last_seen ? new Date(device.last_seen).getTime() : null;
   const isOffline =
     lastSeenMs === null || Number.isNaN(lastSeenMs) || Date.now() - lastSeenMs >= 60000;
@@ -651,14 +652,36 @@ function RelayControlCard({ device }) {
     if (!device?.id || isOffline) return;
     const command = currentState === true ? `${key}_off` : `${key}_on`;
     setSendingKey(key);
+    setRelayError(null);
     try {
       const { data: { user } } = await supabase.auth.getUser();
+      console.log('[RELAY] Diagnostic info before insert:', {
+        device_id_uuid: device.id,
+        device_id_text: device.device_id,
+        command_type: command,
+        current_state: currentState,
+        user_id: user?.id ?? null,
+      });
       const { error: commandError } = await supabase.from("device_commands").insert({
         device_id: device.id,
         command_type: command,
         created_by: user?.id ?? null,
       });
-      if (commandError) console.error('[RELAY] command insert failed:', commandError.message);
+      if (commandError) {
+        console.error('[RELAY] Insert ERROR:', {
+          message: commandError.message,
+          code: commandError.code,
+          hint: commandError.hint,
+          details: commandError.details,
+        });
+        setRelayError(`Relay Error: ${commandError.message}${commandError.details ? ' (' + commandError.details + ')' : ''}`);
+        return;
+      } else {
+        console.log('[RELAY] Command inserted OK for:', { device_id: device.id, command_type: command });
+      }
+    } catch (err) {
+      console.error('[RELAY] Unexpected error:', err);
+      setRelayError(`Error: ${err.message}`);
     } finally {
       setTimeout(() => setSendingKey(null), 1000);
     }
@@ -695,6 +718,7 @@ function RelayControlCard({ device }) {
         })}
       </div>
       <div className="mt-4 space-y-2">
+        {relayError && <p className="rounded-lg bg-red-50 px-3 py-2 text-xs font-medium text-red-700 break-words">{relayError}</p>}
         {isOffline && <p className="rounded-lg bg-red-50 px-3 py-2 text-[11px] font-medium text-red-700">Perangkat offline. Status relay terakhir.</p>}
         <p className="rounded-lg bg-blue-50 px-3 py-2 text-[11px] text-blue-700">PENTING: Perintah membutuhkan delay beberapa dtk (polling). Status aktual diperbarui setelah ESP32 mengirim heartbeat (~3 detik).</p>
       </div>

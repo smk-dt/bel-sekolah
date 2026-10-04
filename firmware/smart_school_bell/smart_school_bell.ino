@@ -214,7 +214,7 @@ static void pttWebSocketTask(void* parameter) {
 }
 
 void initPttWebSocket() {
-  pttWebSocket.begin(PTT_WS_HOST, PTT_WS_PORT, PTT_WS_PATH);
+  pttWebSocket.beginSSLWithTime(PTT_WS_HOST, PTT_WS_PORT, PTT_WS_PATH);
   pttWebSocket.onEvent(pttWebSocketEvent);
   pttWebSocket.setReconnectInterval(5000);
   pttPcmResetCounters();

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   BrowserRouter,
   Routes,
@@ -29,6 +29,9 @@ import {
   Cpu,
   AlertTriangle,
   RefreshCw,
+  Plug,
+  CircleCheck,
+  CircleX,
 } from 'lucide-react'
 import { supabase } from './lib/supabase'
 import { DAY_NAMES_ID, DAY_MAP_NUM_TO_KEY, formatLastSeen, formatTime, getNextSchedule, audioLabelForTrack } from './lib/schedule'
@@ -378,86 +381,101 @@ function HomePage({ session }) {
   })
   const [errors, setErrors] = useState({})
   const [loading, setLoading] = useState(true)
+  const [refreshing, setRefreshing] = useState(false)
   const [profile, setProfile] = useState(null)
-  const [reloadKey, setReloadKey] = useState(0)
-  useEffect(() => {
-    let isMounted = true
-    async function loadData() {
-      if (reloadKey === 0) setLoading(true)
-      const nextErrors = {}
-      let nextDevices = []
-      let nextSchedules = []
-      let nextAudios = []
-      try {
-        const [devicesResult, schedulesResult, audiosResult, profileResult] =
-          await Promise.all([
-            supabase
-              .from('devices')
-              .select('*')
-              .order('last_seen', { ascending: false }),
-            supabase
-              .from('schedules')
-              .select('id, name, day, time, enabled, track')
-              .order('time'),
-            supabase
-              .from('audios')
-              .select('id, file_number, file_name, label')
-              .order('file_number'),
-            session?.user
-              ? supabase
-                  .from('profiles')
-                  .select('username')
-                  .eq('id', session.user.id)
-                  .maybeSingle()
-              : Promise.resolve({ data: null, error: null }),
-          ])
-        if (devicesResult.error) {
-          nextErrors.devices = true
-        } else {
-          nextDevices = devicesResult.data ?? []
-        }
-        if (schedulesResult.error) {
-          nextErrors.schedules = true
-        } else {
-          nextSchedules = schedulesResult.data ?? []
-        }
-        if (audiosResult.error) {
-          nextErrors.audios = true
-        } else {
-          nextAudios = audiosResult.data ?? []
-        }
-        if (!profileResult.error && profileResult.data?.username && isMounted) {
-          setProfile(profileResult.data)
-        }
-      } catch {
-        nextErrors.all = true
+  const mountedRef = useRef(true)
+  // ------------------------------------------------------------
+  // AJAX refresh: ambil ulang data lewat fetch Supabase (in-place),
+  // TANPA remount useEffect / reloadKey dan TANPA flash loading.
+  // Dipakai oleh polling 3 detik, tombol "Segarkan Data", dan "Coba Lagi".
+  // ------------------------------------------------------------
+  const loadData = useCallback(async ({ initial = false } = {}) => {
+    if (initial) setLoading(true)
+    const nextErrors = {}
+    let nextDevices = []
+    let nextSchedules = []
+    let nextAudios = []
+    try {
+      const [devicesResult, schedulesResult, audiosResult, profileResult] =
+        await Promise.all([
+          supabase
+            .from('devices')
+            .select('*')
+            .order('last_seen', { ascending: false }),
+          supabase
+            .from('schedules')
+            .select('id, name, day, time, enabled, track')
+            .order('time'),
+          supabase
+            .from('audios')
+            .select('id, file_number, file_name, label')
+            .order('file_number'),
+          session?.user
+            ? supabase
+                .from('profiles')
+                .select('username')
+                .eq('id', session.user.id)
+                .maybeSingle()
+            : Promise.resolve({ data: null, error: null }),
+        ])
+      if (devicesResult.error) {
         nextErrors.devices = true
+      } else {
+        nextDevices = devicesResult.data ?? []
+      }
+      if (schedulesResult.error) {
         nextErrors.schedules = true
+      } else {
+        nextSchedules = schedulesResult.data ?? []
+      }
+      if (audiosResult.error) {
         nextErrors.audios = true
+      } else {
+        nextAudios = audiosResult.data ?? []
       }
-      if (isMounted) {
-        setDevices(nextDevices)
-        setSchedules(nextSchedules)
-        setAudios(nextAudios)
-        setCounts({
-          totalSchedules: nextSchedules.length,
-          activeSchedules: nextSchedules.filter((s) => s.enabled).length,
-          totalAudios: nextAudios.length,
-        })
-        setErrors(nextErrors)
-        setLoading(false)
+      if (!profileResult.error && profileResult.data?.username && mountedRef.current) {
+        setProfile(profileResult.data)
       }
+    } catch {
+      nextErrors.all = true
+      nextErrors.devices = true
+      nextErrors.schedules = true
+      nextErrors.audios = true
     }
-    loadData()
-    // Polling data devais setiap 3 detik untuk memantau status aktual/heartbeat
+    if (!mountedRef.current) return
+    setDevices(nextDevices)
+    setSchedules(nextSchedules)
+    setAudios(nextAudios)
+    setCounts({
+      totalSchedules: nextSchedules.length,
+      activeSchedules: nextSchedules.filter((s) => s.enabled).length,
+      totalAudios: nextAudios.length,
+    })
+    setErrors(nextErrors)
+    setLoading(false)
+  }, [session])
+  // Muat pertama kali + polling data devais setiap 3 detik untuk memantau heartbeat
+  useEffect(() => {
+    mountedRef.current = true
+    loadData({ initial: true })
     const interval = setInterval(() => {
       loadData()
     }, 3000)
     return () => {
-      isMounted = false
+      mountedRef.current = false
       clearInterval(interval)
     }
-  }, [session, reloadKey])
+  }, [loadData])
+  // Tombol "Segarkan Data" / "Coba Lagi": refresh AJAX in-place (tanpa reload halaman)
+  async function handleRefresh() {
+    setRefreshing(true)
+    try {
+      await loadData()
+    } finally {
+      if (mountedRef.current) setRefreshing(false)
+    }
+  }
+
   const device = devices[0] ?? null
   const email = session?.user?.email || profile?.username || 'Pengguna'
   const allFailed =
@@ -466,12 +484,13 @@ function HomePage({ session }) {
     return <HomeLoading />
   }
   if (allFailed) {
-    return <HomeErrorPage onRetry={() => setReloadKey((k) => k + 1)} />
+    // Retry = AJAX in-place: begitu fetch berhasil, `errors` bersih dan error page hilang sendiri
+    return <HomeErrorPage onRetry={handleRefresh} retrying={refreshing} />
   }
   return (
     <div>
       {/* Status sistem + email user yang login */}
-      <HomeHeader email={email} onRefresh={() => setReloadKey((k) => k + 1)} />
+      <HomeHeader email={email} onRefresh={handleRefresh} refreshing={refreshing} />
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
         <DeviceStatusCard
           device={device}
@@ -493,7 +512,7 @@ function HomePage({ session }) {
     </div>
   )
 }
-function HomeHeader({ email, onRefresh }) {
+function HomeHeader({ email, onRefresh, refreshing = false }) {
   return (
     <section className="mb-6 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -516,10 +535,11 @@ function HomeHeader({ email, onRefresh }) {
       <button
         type="button"
         onClick={onRefresh}
-        className="mt-3 inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-600 transition hover:bg-slate-100"
+        disabled={refreshing}
+        className="mt-3 inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-600 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
       >
-        <RefreshCw className="h-3.5 w-3.5" />
-        Segarkan Data
+        <RefreshCw className={`h-3.5 w-3.5 ${refreshing ? 'animate-spin' : ''}`} />
+        {refreshing ? 'Menyegarkan…' : 'Segarkan Data'}
       </button>
     </section>
   )
@@ -853,21 +873,22 @@ function HomeLoading() {
     </div>
   )
 }
-function HomeErrorPage({ onRetry }) {
+function HomeErrorPage({ onRetry, retrying = false }) {
   return (
     <div className="rounded-2xl border border-red-200 bg-red-50 p-8 text-center">
       <AlertTriangle className="mx-auto h-10 w-10 text-red-400" />
       <h2 className="mt-3 text-lg font-bold text-red-700">
         Gagal mengambil data sistem.
       </h2>
-      <p className="mt-1 text-sm text-red-600">Silakan coba refresh halaman.</p>
+      <p className="mt-1 text-sm text-red-600">Silakan coba lagi.</p>
       <button
         type="button"
         onClick={onRetry}
-        className="mt-4 inline-flex items-center gap-2 rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-red-700"
+        disabled={retrying}
+        className="mt-4 inline-flex items-center gap-2 rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-60"
       >
-        <RefreshCw className="h-4 w-4" />
-        Coba Lagi
+        <RefreshCw className={`h-4 w-4 ${retrying ? 'animate-spin' : ''}`} />
+        {retrying ? 'Memuat…' : 'Coba Lagi'}
       </button>
     </div>
   )
@@ -898,6 +919,11 @@ function PttPage() {
   const [microphoneError, setMicrophoneError] = useState(null)
 
   const [pttDiag, setPttDiag] = useState({ mic: '-', ctx: '-', inputRate: 0, generated: 0, sent: 0, bytes: 0, micPeak: null, micRms: null, micNonZero: null, minSample: null, maxSample: null, resPeak: null, i16Peak: null, i16Zeros: null, zeroFrames: null, constFrames: null })
+  // [PTT TEST] read-only connection check: HTTP /health -> WS /ptt open -> PTT_TEST / PTT_ACK round-trip.
+  // Never opens the microphone and never sends PCM frames.
+  const [pttTest, setPttTest] = useState({ running: false, steps: [], error: null })
+  const pttTestRef = useRef({ socket: null, timer: null })
+  const pttTestCancelled = useRef(false)
   const microphoneStream = useRef(null)
   const audioContextRef = useRef(null)
   const pttWorkerRef = useRef(null) // dedicated WebSocket worker: the ONLY PCM sender
@@ -949,6 +975,13 @@ function PttPage() {
     lastLogFrames.current = 0
     workerStatus.current = { sent: 0, queue: 0, queuePeak: 0, overflow: 0 }
     workerSend.current = { min: 0, sum: 0, count: 0, max: 0, gap25: 0, gap40: 0, gap100: 0 }
+  }, [audioServerUrl])
+  // [PTT TEST] abort an in-flight connection test when the page unmounts or the URL changes
+  useEffect(() => () => {
+    pttTestCancelled.current = true
+    const t = pttTestRef.current
+    if (t.timer) { clearTimeout(t.timer); t.timer = null }
+    if (t.socket) { try { t.socket.onopen = null; t.socket.onmessage = null; t.socket.onerror = null; t.socket.onclose = null; t.socket.close() } catch { /* ignore */ } ; t.socket = null }
   }, [audioServerUrl])
   function audioWsUrl() {
     return audioServerUrl.replace(/^http/, 'ws') + '/ptt'
@@ -1227,14 +1260,116 @@ function PttPage() {
     setMicrophoneError(null)
     if (await startMicrophone()) setPttActive(true)
   }
+
+  // [PTT TEST] Connection test only — no microphone permission, no PCM frames, no MediaRecorder.
+  // Step 1: Audio Server reachable over HTTP (/health -> {"status":"ok"}).
+  // Step 2: WebSocket /ptt handshake, waiting for the server's "PTT_ACK" reply to "PTT_TEST".
+  // The socket is closed as soon as the ACK arrives, so this browser is never left registered
+  // as a sink that would receive live PCM from a transmitting source.
+  async function runConnectionTest() {
+    if (pttTest.running) return
+    pttTestCancelled.current = false
+    const step = (name, state, detail) => ({ name, state, detail, at: new Date() })
+    setPttTest({ running: true, error: null, steps: [step('Audio Server HTTP', 'running', audioServerUrl + '/health')] })
+    // --- Step 1: HTTP health ---
+    let httpOk = false
+    try {
+      const controller = new AbortController()
+      const abort = setTimeout(() => controller.abort(), 5000)
+      const res = await fetch(audioServerUrl + '/health', { signal: controller.signal })
+      clearTimeout(abort)
+      const body = await res.json().catch(() => null)
+      httpOk = res.ok && body?.status === 'ok'
+      setPttTest((s) => ({ ...s, steps: [step('Audio Server HTTP', httpOk ? 'ok' : 'fail', httpOk ? `HTTP ${res.status} · status=${body.status} · uptime ${body.uptimeSeconds}s` : `HTTP ${res.status}`)] }))
+    } catch (e) {
+      setPttTest((s) => ({ ...s, steps: [step('Audio Server HTTP', 'fail', e.name === 'AbortError' ? 'Timeout (5s)' : String(e.message || e))] }))
+    }
+    if (pttTestCancelled.current) return
+    // --- Step 2: WebSocket /ptt + PTT_TEST / PTT_ACK round-trip ---
+    const wsUrl = audioWsUrl()
+    const result = await new Promise((resolve) => {
+      let socket
+      try {
+        socket = new WebSocket(wsUrl)
+      } catch (e) {
+        resolve({ ok: false, detail: String(e.message || e) })
+        return
+      }
+      pttTestRef.current.socket = socket
+      const finish = (ok, detail) => {
+        const t = pttTestRef.current
+        if (t.timer) { clearTimeout(t.timer); t.timer = null }
+        t.socket = null
+        try { socket.close() } catch { /* ignore */ }
+        resolve({ ok, detail })
+      }
+      pttTestRef.current.timer = setTimeout(() => {
+        const t = pttTestRef.current
+        if (t.socket !== socket) return // already resolved
+        finish(false, 'Timeout menunggu PTT_ACK (8s)')
+      }, 8000)
+      socket.onopen = () => {
+        try { socket.send('PTT_TEST') } catch (e) { finish(false, String(e.message || e)) }
+      }
+      socket.onmessage = (ev) => {
+        if (ev.data === 'PTT_ACK') finish(true, 'WebSocket OPEN · PTT_ACK diterima')
+      }
+      socket.onerror = () => {
+        if (pttTestRef.current.socket === socket) finish(false, 'WebSocket error (server tidak merespons)')
+      }
+      socket.onclose = () => {
+        // closed before ACK (or by the cleanup effect): only report if still pending
+        if (pttTestRef.current.socket === socket) finish(false, 'WebSocket tertutup sebelum PTT_ACK')
+      }
+    })
+    if (pttTestCancelled.current) return
+    setPttTest((s) => ({
+      running: false,
+      error: null,
+      steps: [...s.steps, step('PTT WebSocket ' + wsUrl, result.ok ? 'ok' : 'fail', result.detail)],
+    }))
+  }
+  const lastTest = pttTest.steps.filter((s) => s.state !== 'running')
+  const audioServerState = pttTest.running
+    ? 'CHECKING'
+    : lastTest.length === 0
+      ? 'UNTESTED'
+      : lastTest.every((s) => s.state === 'ok') ? 'ONLINE' : 'OFFLINE'
   return (
     <PlaceholderPage title="PTT">
       <div className="mb-4 grid grid-cols-1 gap-2 text-xs sm:grid-cols-3">
-        <InfoRow icon={<Server className="h-3.5 w-3.5" />} label="AUDIO SERVER" value="OFFLINE" />
+        <InfoRow icon={<Server className="h-3.5 w-3.5" />} label="AUDIO SERVER" value={audioServerState} />
         <InfoRow icon={<Mic className="h-3.5 w-3.5" />} label="MICROPHONE" value={microphoneStatus} />
         <InfoRow icon={<Radio className="h-3.5 w-3.5" />} label="STREAMING" value={pttActive ? 'TRANSMITTING' : deviceOnline ? 'READY' : 'OFFLINE'} />
       </div>
       {(error || microphoneError) && <p className="mb-4 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700">{error || microphoneError}</p>}
+      <div className="mb-4 rounded-xl border border-slate-200 bg-white p-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">TEST KONEKSI AUDIO STREAM</p>
+            <p className="mt-1 text-xs text-slate-500">Cek HTTP Audio Server dan handshake WebSocket <span className="font-mono">/ptt</span>. Tanpa mikrofon, tanpa kirim PCM.</p>
+          </div>
+          <button type="button" onClick={runConnectionTest} disabled={pttTest.running} className="inline-flex items-center gap-2 rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60">
+            {pttTest.running ? <Loader className="h-4 w-4 animate-spin" /> : <Plug className="h-4 w-4" />}
+            {pttTest.running ? 'MENGUJI…' : 'Test Koneksi'}
+          </button>
+        </div>
+        {pttTest.steps.length > 0 && (
+          <ul className="mt-3 space-y-1.5 border-t border-slate-100 pt-3">
+            {pttTest.steps.map((s) => (
+              <li key={s.name} className="flex items-start gap-2 text-xs">
+                {s.state === 'ok' ? <CircleCheck className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-600" />
+                  : s.state === 'fail' ? <CircleX className="mt-0.5 h-3.5 w-3.5 shrink-0 text-red-600" />
+                    : <Loader className="mt-0.5 h-3.5 w-3.5 shrink-0 animate-spin text-slate-400" />}
+                <span className="min-w-0">
+                  <span className="font-medium text-slate-700">{s.name}</span>
+                  <span className="text-slate-500"> — {s.detail}</span>
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
       <div className="mb-4 rounded-xl border border-slate-200 bg-white p-3 font-mono text-xs text-slate-600">
         <p>Mic permission: <span className="font-semibold text-slate-800">{pttDiag.mic}</span> · AudioContext: <span className="font-semibold text-slate-800">{pttDiag.ctx}</span> · Input sample rate: <span className="font-semibold text-slate-800">{pttDiag.inputRate ? `${pttDiag.inputRate} Hz` : '-'}</span> · Output PCM rate: <span className="font-semibold text-slate-800">16000 Hz</span></p>
         <p>PCM format: <span className="font-semibold text-slate-800">16-bit signed LE · mono · 320 samples / 640 B / 20 ms</span></p>

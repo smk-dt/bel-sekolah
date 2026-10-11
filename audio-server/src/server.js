@@ -7,7 +7,7 @@ const http = require("http");
 const { WebSocketServer } = require("ws");
 
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 3010;
 const pttSessions = new Map();
 const pttClients = new Set();
 const httpServer = http.createServer(app);
